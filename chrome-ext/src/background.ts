@@ -89,13 +89,47 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
 });
 
-// Handle keyboard commands
-chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== "resubmit-last") {
+// Handle tab navigation commands
+async function handleTabNavigation(direction: "left" | "right"): Promise<void> {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const activeTab = tabs.find((t) => t.active);
+
+  if (!activeTab || activeTab.index === undefined) {
     return;
   }
 
-  console.log("[Grok Imagine Power Tools] Resubmit-last command triggered");
+  const currentIndex = activeTab.index;
+  const tabCount = tabs.length;
+
+  // Calculate new index with wrapping
+  const newIndex =
+    direction === "left"
+      ? (currentIndex - 1 + tabCount) % tabCount
+      : (currentIndex + 1) % tabCount;
+
+  const targetTab = tabs.find((t) => t.index === newIndex);
+  if (targetTab?.id) {
+    await chrome.tabs.update(targetTab.id, { active: true });
+  }
+}
+
+// Handle keyboard commands
+chrome.commands.onCommand.addListener(async (command) => {
+  // Tab navigation commands
+  if (command === "tab-left") {
+    await handleTabNavigation("left");
+    return;
+  }
+  if (command === "tab-right") {
+    await handleTabNavigation("right");
+    return;
+  }
+
+  if (command !== "resubmit-last" && command !== "submit-clipboard") {
+    return;
+  }
+
+  console.log(`[Grok Imagine Power Tools] ${command} command triggered`);
 
   try {
     // Get the active tab
@@ -139,28 +173,44 @@ chrome.commands.onCommand.addListener(async (command) => {
       return;
     }
 
-    // Get the most recent history entry (keyed by source image ID)
-    const entry = await getMostRecentHistoryEntry(sourceImageId);
+    if (command === "resubmit-last") {
+      // Get the most recent history entry (keyed by source image ID)
+      const entry = await getMostRecentHistoryEntry(sourceImageId);
 
-    if (!entry) {
-      console.log("[Grok Imagine Power Tools] No history entries for source image:", sourceImageId);
-      return;
-    }
-
-    console.log("[Grok Imagine Power Tools] Re-submitting:", entry.text.substring(0, 50) + "...");
-
-    // Send fillAndSubmit to the content script
-    try {
-      const result = await chrome.tabs.sendMessage(tab.id, {
-        type: "fillAndSubmit",
-        text: entry.text,
-      });
-
-      if (result && !result.success) {
-        console.error("[Grok Imagine Power Tools] Fill and submit failed:", result.error);
+      if (!entry) {
+        console.log("[Grok Imagine Power Tools] No history entries for source image:", sourceImageId);
+        return;
       }
-    } catch (error) {
-      console.error("[Grok Imagine Power Tools] Failed to send fillAndSubmit:", error);
+
+      console.log("[Grok Imagine Power Tools] Re-submitting:", entry.text.substring(0, 50) + "...");
+
+      // Send fillAndSubmit to the content script
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: "fillAndSubmit",
+          text: entry.text,
+        });
+
+        if (result && !result.success) {
+          console.error("[Grok Imagine Power Tools] Fill and submit failed:", result.error);
+        }
+      } catch (error) {
+        console.error("[Grok Imagine Power Tools] Failed to send fillAndSubmit:", error);
+      }
+    } else if (command === "submit-clipboard") {
+      // Send submitFromClipboard to the content script
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: "submitFromClipboard",
+          sourceImageId,
+        });
+
+        if (result && !result.success) {
+          console.error("[Grok Imagine Power Tools] Submit from clipboard failed:", result.error);
+        }
+      } catch (error) {
+        console.error("[Grok Imagine Power Tools] Failed to send submitFromClipboard:", error);
+      }
     }
   } catch (error) {
     console.error("[Grok Imagine Power Tools] Command handler error:", error);

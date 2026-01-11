@@ -212,6 +212,42 @@ function fillAndSubmitVideo(text: string): { success: boolean; error?: string } 
   return { success: true };
 }
 
+// Storage key for post history (must match popup and background)
+const STORAGE_KEY = "postHistory";
+
+interface HistoryEntry {
+  text: string;
+  timestamp: number;
+}
+
+interface PostHistory {
+  [postId: string]: HistoryEntry[];
+}
+
+// Get history for a specific post
+async function getPostHistory(postId: string): Promise<HistoryEntry[]> {
+  const result = await chrome.storage.local.get(STORAGE_KEY);
+  const history: PostHistory = result[STORAGE_KEY] || {};
+  return history[postId] || [];
+}
+
+// Save an entry to post history
+async function saveToPostHistory(postId: string, text: string): Promise<void> {
+  const result = await chrome.storage.local.get(STORAGE_KEY);
+  const history: PostHistory = result[STORAGE_KEY] || {};
+
+  if (!history[postId]) {
+    history[postId] = [];
+  }
+
+  history[postId].push({
+    text,
+    timestamp: Date.now(),
+  });
+
+  await chrome.storage.local.set({ [STORAGE_KEY]: history });
+}
+
 // Listen for messages from popup or background
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "getMode") {
@@ -227,6 +263,39 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const result = fillAndSubmitVideo(message.text);
     sendResponse(result);
     return true;
+  }
+
+  if (message.type === "submitFromClipboard") {
+    // Handle async clipboard read
+    (async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        const trimmed = text.trim();
+
+        if (!trimmed) {
+          sendResponse({ success: false, error: "Clipboard is empty" });
+          return;
+        }
+
+        const sourceImageId = message.sourceImageId;
+
+        // Check if text already exists in history
+        const currentHistory = await getPostHistory(sourceImageId);
+        const alreadyExists = currentHistory.some((entry) => entry.text === trimmed);
+
+        if (!alreadyExists) {
+          await saveToPostHistory(sourceImageId, trimmed);
+        }
+
+        // Fill and submit
+        const result = fillAndSubmitVideo(trimmed);
+        sendResponse(result);
+      } catch (error) {
+        console.error("[Grok Imagine Power Tools] Clipboard read failed:", error);
+        sendResponse({ success: false, error: "Failed to read clipboard" });
+      }
+    })();
+    return true; // Keep channel open for async response
   }
 
   return false;
@@ -253,16 +322,24 @@ function getImageIdFromCard(card: Element): string | null {
 
   // Look for an image within the card
   const img = card.querySelector<HTMLImageElement>("img");
-  if (img?.src) {
-    // Pattern: imagine-public/images/{uuid}.jpg (standard images)
-    const imgMatch = img.src.match(/imagine-public\/images\/([0-9a-f-]+)\.jpg/i);
-    if (imgMatch && imgMatch[1] && uuidPattern.test(imgMatch[1])) {
-      return imgMatch[1];
+  if (img) {
+    // Check src first for URL-based patterns
+    if (img.src) {
+      // Pattern: imagine-public/images/{uuid}.jpg (standard images)
+      const imgMatch = img.src.match(/imagine-public\/images\/([0-9a-f-]+)\.jpg/i);
+      if (imgMatch && imgMatch[1] && uuidPattern.test(imgMatch[1])) {
+        return imgMatch[1];
+      }
+      // Pattern: assets.grok.com/users/.../generated/{uuid}/preview_image.jpg (video thumbnails)
+      const previewMatch = img.src.match(/generated\/([0-9a-f-]+)\/preview_image\.jpg/i);
+      if (previewMatch && previewMatch[1] && uuidPattern.test(previewMatch[1])) {
+        return previewMatch[1];
+      }
     }
-    // Pattern: assets.grok.com/users/.../generated/{uuid}/preview_image.jpg (video thumbnails)
-    const previewMatch = img.src.match(/generated\/([0-9a-f-]+)\/preview_image\.jpg/i);
-    if (previewMatch && previewMatch[1] && uuidPattern.test(previewMatch[1])) {
-      return previewMatch[1];
+
+    // Fallback: check alt attribute (used on results page where src is base64)
+    if (img.alt && uuidPattern.test(img.alt)) {
+      return img.alt;
     }
   }
 
@@ -295,8 +372,8 @@ function setupFavoritesClickHandler(): void {
       return;
     }
 
-    // Only in favorites mode
-    if (currentMode !== "favorites") {
+    // Only in favorites or results mode (both show image/video grids)
+    if (currentMode !== "favorites" && currentMode !== "results") {
       return;
     }
 
@@ -309,7 +386,15 @@ function setupFavoritesClickHandler(): void {
 
     const imageId = getImageIdFromCard(card);
     if (!imageId) {
-      console.log("[Grok Imagine Power Tools] Could not extract image/video ID from card");
+      const img = card.querySelector<HTMLImageElement>("img");
+      const video = card.querySelector<HTMLVideoElement>("video");
+      console.log("[Grok Imagine Power Tools] Could not extract image/video ID from card", {
+        hasImg: !!img,
+        imgSrc: img?.src?.substring(0, 100),
+        imgAlt: img?.alt,
+        hasVideo: !!video,
+        videoSrc: video?.src?.substring(0, 100),
+      });
       return;
     }
 
