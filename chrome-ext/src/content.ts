@@ -127,6 +127,13 @@ function debounce<T extends (...args: unknown[]) => void>(
 // Debounced mode check
 const debouncedModeCheck = debounce(checkModeChange, 100);
 
+// State for navigation interception (used to capture UUIDs from fresh result images)
+let navigationInterceptor: {
+  enabled: boolean;
+  capturedUrl: string | null;
+  scrollY: number;
+} | null = null;
+
 // Set up MutationObserver to watch for DOM changes
 function setupMutationObserver(): void {
   const observer = new MutationObserver(() => {
@@ -149,6 +156,28 @@ function setupHistoryInterception(): void {
   // Intercept pushState
   const originalPushState = history.pushState.bind(history);
   history.pushState = function (...args) {
+    const url = args[2] as string | undefined;
+    console.log("[Grok Imagine Power Tools] pushState called:", {
+      url,
+      interceptorEnabled: navigationInterceptor?.enabled,
+    });
+
+    // Check if we're intercepting navigation to capture UUID
+    if (navigationInterceptor?.enabled) {
+      if (url?.includes("/imagine/post/")) {
+        // Capture the URL
+        navigationInterceptor.capturedUrl = url;
+        console.log("[Grok Imagine Power Tools] Captured navigation URL:", url);
+
+        // Still call pushState so browser history is updated
+        originalPushState(...args);
+
+        // Immediately go back before React renders the new page
+        history.back();
+        return;
+      }
+    }
+
     originalPushState(...args);
     debouncedModeCheck();
   };
@@ -366,7 +395,12 @@ function findMasonryCard(target: Element): Element | null {
 
 // Handle Alt+Shift+Click to open favorites in new tab
 function setupFavoritesClickHandler(): void {
-  document.addEventListener("click", (e) => {
+  document.addEventListener("click", async (e) => {
+    // Skip synthetic clicks we dispatch for navigation interception
+    if ((e as MouseEvent & { _syntheticForInterception?: boolean })._syntheticForInterception) {
+      return;
+    }
+
     // Only handle Alt+Shift+Click
     if (!e.altKey || !e.shiftKey) {
       return;
@@ -384,27 +418,62 @@ function setupFavoritesClickHandler(): void {
       return;
     }
 
-    const imageId = getImageIdFromCard(card);
-    if (!imageId) {
-      const img = card.querySelector<HTMLImageElement>("img");
-      const video = card.querySelector<HTMLVideoElement>("video");
-      console.log("[Grok Imagine Power Tools] Could not extract image/video ID from card", {
-        hasImg: !!img,
-        imgSrc: img?.src?.substring(0, 100),
-        imgAlt: img?.alt,
-        hasVideo: !!video,
-        videoSrc: video?.src?.substring(0, 100),
-      });
-      return;
-    }
-
     // Prevent default click behavior
     e.preventDefault();
     e.stopPropagation();
 
-    // Open post in new tab via background script
-    const url = `https://grok.com/imagine/post/${imageId}`;
-    chrome.runtime.sendMessage({ type: "openTab", url });
+    // Try direct DOM extraction first (works for favorites and cached images)
+    let imageId = getImageIdFromCard(card);
+
+    // Fallback: simulate click and capture navigation URL (for fresh result images)
+    if (!imageId) {
+      console.log("[Grok Imagine Power Tools] Attempting navigation capture fallback");
+      const scrollY = window.scrollY;
+      const originalUrl = window.location.href;
+
+      // Create synthetic click without modifiers
+      const syntheticClick = new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      }) as MouseEvent & { _syntheticForInterception?: boolean };
+      syntheticClick._syntheticForInterception = true;
+
+      // Dispatch on the image or card
+      const clickTarget = card.querySelector("img") || card;
+      console.log("[Grok Imagine Power Tools] Dispatching synthetic click on:", clickTarget.tagName);
+      clickTarget.dispatchEvent(syntheticClick);
+
+      // Poll for URL change (React navigation is async)
+      for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        if (window.location.href !== originalUrl) {
+          console.log("[Grok Imagine Power Tools] URL changed to:", window.location.href);
+          const match = window.location.pathname.match(/\/imagine\/post\/([^/?]+)/);
+          if (match) {
+            imageId = match[1];
+            // Go back to results page
+            history.back();
+            // Restore scroll position after navigation
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            window.scrollTo(0, scrollY);
+          }
+          break;
+        }
+      }
+
+      if (!imageId) {
+        console.log("[Grok Imagine Power Tools] URL did not change after synthetic click");
+      }
+    }
+
+    if (imageId) {
+      const url = `https://grok.com/imagine/post/${imageId}`;
+      chrome.runtime.sendMessage({ type: "openTab", url });
+    } else {
+      console.log("[Grok Imagine Power Tools] Could not extract image/video ID from card");
+    }
   }, true); // Use capture phase to intercept before React handlers
 }
 
