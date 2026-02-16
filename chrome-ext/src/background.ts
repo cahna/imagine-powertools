@@ -14,6 +14,20 @@ interface PostHistory {
 // Storage key for post history (must match popup)
 const STORAGE_KEY = "postHistory";
 
+// Video option types
+type VideoOption = "6s" | "10s" | "480p" | "720p" | "spicy" | "fun" | "normal";
+
+// Mapping from command name to video option
+const VIDEO_COMMANDS: Record<string, VideoOption> = {
+  "video-6s": "6s",
+  "video-10s": "10s",
+  "video-480p": "480p",
+  "video-720p": "720p",
+  "video-spicy": "spicy",
+  "video-fun": "fun",
+  "video-normal": "normal",
+};
+
 // Store mode per tab
 const tabModes = new Map<number, Mode>();
 
@@ -122,6 +136,44 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
   if (command === "tab-right") {
     await handleTabNavigation("right");
+    return;
+  }
+
+  // Video option commands
+  if (command in VIDEO_COMMANDS) {
+    const option = VIDEO_COMMANDS[command];
+    console.log(`[Grok Imagine Power Tools] Video option command: ${option}`);
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab?.id) {
+        console.log("[Grok Imagine Power Tools] No active tab found");
+        return;
+      }
+
+      const url = tab.url || "";
+      if (!url.startsWith("https://grok.com/imagine")) {
+        console.log("[Grok Imagine Power Tools] Not on grok.com/imagine page");
+        return;
+      }
+
+      // Send message to content script to click video option
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: "clickVideoOption",
+          option,
+        });
+
+        if (result && !result.success) {
+          console.error("[Grok Imagine Power Tools] Click video option failed:", result.error);
+        }
+      } catch (error) {
+        console.error("[Grok Imagine Power Tools] Failed to send clickVideoOption:", error);
+      }
+    } catch (error) {
+      console.error("[Grok Imagine Power Tools] Video option command error:", error);
+    }
     return;
   }
 

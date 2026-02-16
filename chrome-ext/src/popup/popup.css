@@ -20,8 +20,49 @@ body {
 h1 {
   font-size: 16px;
   font-weight: 600;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   color: #1a1a1a;
+}
+
+/* Tab navigation */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 8px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.tab-btn.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
 }
 
 .mode-section {
@@ -213,4 +254,94 @@ h1 {
 
 .delete-btn:hover {
   color: #ef4444;
+}
+
+/* Database Import/Export Section */
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.export-section,
+.import-section {
+  margin-bottom: 12px;
+}
+
+.action-btn {
+  width: 100%;
+  padding: 8px 16px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.action-btn:hover {
+  background: #2563eb;
+}
+
+.action-btn:active {
+  background: #1d4ed8;
+}
+
+.secondary-btn {
+  width: 100%;
+  padding: 6px 12px;
+  margin-top: 8px;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.secondary-btn:hover {
+  background: #e5e7eb;
+}
+
+.data-textarea {
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 11px;
+  resize: vertical;
+  background: #f9fafb;
+}
+
+.data-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.export-result {
+  margin-top: 8px;
+}
+
+.import-status {
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.import-status.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.import-status.error {
+  background: #fee2e2;
+  color: #991b1b;
 }

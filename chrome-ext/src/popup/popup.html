@@ -9,23 +9,54 @@
 <body>
   <div class="container">
     <h1>Grok Imagine Power Tools</h1>
-    <div class="mode-section">
-      <span class="mode-label">Current Mode:</span>
-      <span id="mode-badge" class="mode-badge">Loading...</span>
-    </div>
-    <p id="status" class="status"></p>
 
-    <!-- Post mode UI -->
-    <div id="post-ui" class="post-ui hidden">
-      <form id="post-form" class="post-form">
-        <textarea id="post-input" class="post-input" placeholder="Enter text..." rows="3"></textarea>
-        <button type="submit" class="submit-btn">Submit</button>
-      </form>
-      <div class="history-section">
-        <h2 class="history-title">History</h2>
-        <ul id="history-list" class="history-list">
-          <li class="history-empty">No entries yet</li>
-        </ul>
+    <!-- Tab navigation -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="main">Main</button>
+      <button class="tab-btn" data-tab="data">Data</button>
+    </div>
+
+    <!-- Main tab content -->
+    <div id="tab-main" class="tab-content active">
+      <div class="mode-section">
+        <span class="mode-label">Current Mode:</span>
+        <span id="mode-badge" class="mode-badge">Loading...</span>
+      </div>
+      <p id="status" class="status"></p>
+
+      <!-- Post mode UI -->
+      <div id="post-ui" class="post-ui hidden">
+        <form id="post-form" class="post-form">
+          <textarea id="post-input" class="post-input" placeholder="Enter text..." rows="3"></textarea>
+          <button type="submit" class="submit-btn">Submit</button>
+        </form>
+        <div class="history-section">
+          <h2 class="history-title">History</h2>
+          <ul id="history-list" class="history-list">
+            <li class="history-empty">No entries yet</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data tab content -->
+    <div id="tab-data" class="tab-content">
+      <h2 class="section-title">Import / Export</h2>
+
+      <!-- Export -->
+      <div class="export-section">
+        <button id="export-btn" class="action-btn">Export Data</button>
+        <div id="export-result" class="export-result hidden">
+          <textarea id="export-data" class="data-textarea" readonly rows="6"></textarea>
+          <button id="copy-export-btn" class="secondary-btn">Copy to Clipboard</button>
+        </div>
+      </div>
+
+      <!-- Import -->
+      <div class="import-section">
+        <textarea id="import-data" class="data-textarea" placeholder="Paste JSON data here..." rows="4"></textarea>
+        <button id="import-btn" class="action-btn">Import (Merge)</button>
+        <p id="import-status" class="import-status hidden"></p>
       </div>
     </div>
   </div>

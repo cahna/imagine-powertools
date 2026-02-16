@@ -31,6 +31,27 @@
         "mac": "Alt+Shift+L"
       },
       "description": "Switch to next tab"
+    },
+    "video-6s": {
+      "description": "Set video duration to 6 seconds"
+    },
+    "video-10s": {
+      "description": "Set video duration to 10 seconds"
+    },
+    "video-480p": {
+      "description": "Set video resolution to 480p"
+    },
+    "video-720p": {
+      "description": "Set video resolution to 720p"
+    },
+    "video-spicy": {
+      "description": "Set video mood to Spicy"
+    },
+    "video-fun": {
+      "description": "Set video mood to Fun"
+    },
+    "video-normal": {
+      "description": "Set video mood to Normal"
     }
   },
   "action": {

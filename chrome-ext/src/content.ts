@@ -260,6 +260,125 @@ async function getPostHistory(postId: string): Promise<HistoryEntry[]> {
   return history[postId] || [];
 }
 
+// Wait for an element to appear in the DOM
+function waitForElement(selector: string, timeout = 2000): Promise<Element | null> {
+  return new Promise((resolve) => {
+    // Check if element already exists
+    const existing = document.querySelector(selector);
+    if (existing) {
+      resolve(existing);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      observer.disconnect();
+      resolve(null);
+    }, timeout);
+
+    const observer = new MutationObserver(() => {
+      const element = document.querySelector(selector);
+      if (element) {
+        clearTimeout(timeoutId);
+        observer.disconnect();
+        resolve(element);
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
+// Find a menu item by its text content
+function findMenuItemByText(text: string): Element | null {
+  const menuItems = document.querySelectorAll('div[role="menuitem"][data-radix-collection-item]');
+  for (const item of menuItems) {
+    if (item.textContent?.includes(text)) {
+      return item;
+    }
+  }
+  return null;
+}
+
+// Click a video option (duration, resolution, or mood)
+async function clickVideoOption(option: string): Promise<{ success: boolean; error?: string }> {
+  // Find the Video Options button
+  const videoOptionsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Video Options"]');
+
+  if (!videoOptionsBtn) {
+    return { success: false, error: "Video Options button not found" };
+  }
+
+  // Check if menu is already open (aria-expanded="true" when open, absent or "false" when closed)
+  const isOpen = videoOptionsBtn.getAttribute("aria-expanded") === "true";
+
+  // If menu is closed, open it
+  if (!isOpen) {
+    videoOptionsBtn.focus();
+
+    // Try pointer events (Radix UI uses these)
+    const pointerDownEvent = new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      pointerType: "mouse",
+    });
+    const pointerUpEvent = new PointerEvent("pointerup", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      pointerType: "mouse",
+    });
+    const clickEvent = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    });
+
+    videoOptionsBtn.dispatchEvent(pointerDownEvent);
+    videoOptionsBtn.dispatchEvent(pointerUpEvent);
+    videoOptionsBtn.dispatchEvent(clickEvent);
+
+    // Wait for menu content to appear (Radix menus use portals)
+    const menuContent = await waitForElement('[data-radix-menu-content]', 2000);
+    if (!menuContent) {
+      // Try alternative selector
+      const altMenu = document.querySelector('[role="menu"][data-state="open"]');
+      if (!altMenu) {
+        return { success: false, error: "Menu did not open" };
+      }
+    }
+
+    // Small delay for menu animation
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  // Find and click the target element based on option type
+  let targetElement: Element | null = null;
+
+  // Duration and resolution buttons use aria-label
+  if (["6s", "10s", "480p", "720p"].includes(option)) {
+    targetElement = document.querySelector(`button[aria-label="${option}"]`);
+  }
+  // Mood options are menu items with text content
+  else if (["spicy", "fun", "normal"].includes(option)) {
+    // Capitalize first letter for matching (e.g., "spicy" -> "Spicy")
+    const moodText = option.charAt(0).toUpperCase() + option.slice(1);
+    targetElement = findMenuItemByText(moodText);
+  }
+
+  if (!targetElement) {
+    return { success: false, error: `Option "${option}" not found in menu` };
+  }
+
+  // Click the target element
+  (targetElement as HTMLElement).click();
+
+  return { success: true };
+}
+
 // Save an entry to post history
 async function saveToPostHistory(postId: string, text: string): Promise<void> {
   const result = await chrome.storage.local.get(STORAGE_KEY);
@@ -323,6 +442,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         console.error("[Grok Imagine Power Tools] Clipboard read failed:", error);
         sendResponse({ success: false, error: "Failed to read clipboard" });
       }
+    })();
+    return true; // Keep channel open for async response
+  }
+
+  if (message.type === "clickVideoOption") {
+    (async () => {
+      const result = await clickVideoOption(message.option);
+      sendResponse(result);
     })();
     return true; // Keep channel open for async response
   }
