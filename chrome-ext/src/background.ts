@@ -177,6 +177,42 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
+  // Download video command
+  if (command === "download-video") {
+    console.log("[Grok Imagine Power Tools] Download video command triggered");
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab?.id) {
+        console.log("[Grok Imagine Power Tools] No active tab found");
+        return;
+      }
+
+      const url = tab.url || "";
+      if (!url.startsWith("https://grok.com/imagine")) {
+        console.log("[Grok Imagine Power Tools] Not on grok.com/imagine page");
+        return;
+      }
+
+      // Send message to content script to click download button
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: "clickDownload",
+        });
+
+        if (result && !result.success) {
+          console.error("[Grok Imagine Power Tools] Click download failed:", result.error);
+        }
+      } catch (error) {
+        console.error("[Grok Imagine Power Tools] Failed to send clickDownload:", error);
+      }
+    } catch (error) {
+      console.error("[Grok Imagine Power Tools] Download command error:", error);
+    }
+    return;
+  }
+
   if (command !== "resubmit-last" && command !== "submit-clipboard") {
     return;
   }

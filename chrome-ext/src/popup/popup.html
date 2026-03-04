@@ -45,7 +45,10 @@
 
       <!-- Export -->
       <div class="export-section">
-        <button id="export-btn" class="action-btn">Export Data</button>
+        <div class="button-row">
+          <button id="export-btn" class="action-btn">Export to Clipboard</button>
+          <button id="download-btn" class="action-btn">Download JSON</button>
+        </div>
         <div id="export-result" class="export-result hidden">
           <textarea id="export-data" class="data-textarea" readonly rows="6"></textarea>
           <button id="copy-export-btn" class="secondary-btn">Copy to Clipboard</button>
@@ -54,9 +57,38 @@
 
       <!-- Import -->
       <div class="import-section">
-        <textarea id="import-data" class="data-textarea" placeholder="Paste JSON data here..." rows="4"></textarea>
-        <button id="import-btn" class="action-btn">Import (Merge)</button>
+        <div class="button-row">
+          <input type="file" id="import-file" accept=".json" class="hidden">
+          <button id="import-file-btn" class="action-btn">Import from File</button>
+        </div>
+        <textarea id="import-data" class="data-textarea" placeholder="Or paste JSON data here..." rows="4"></textarea>
+        <button id="import-btn" class="action-btn">Import from Text (Merge)</button>
         <p id="import-status" class="import-status hidden"></p>
+      </div>
+
+      <!-- Shortcuts Setup (shown on chrome://extensions/shortcuts) -->
+      <div id="shortcuts-section" class="shortcuts-section hidden">
+        <h2 class="section-title">Keyboard Shortcuts Setup</h2>
+        <p class="shortcuts-instructions">Copy the script below and paste it into DevTools console (F12) on this page to auto-set all hotkeys.</p>
+        <button id="copy-shortcuts-script" class="action-btn">Copy Setup Script</button>
+        <p id="shortcuts-status" class="import-status hidden"></p>
+        <details class="shortcuts-reference">
+          <summary>Hotkey Reference</summary>
+          <table class="hotkeys-table">
+            <tr><td>Alt+Shift+R</td><td>Re-submit last</td></tr>
+            <tr><td>Alt+Shift+P</td><td>Submit clipboard</td></tr>
+            <tr><td>Alt+Shift+H</td><td>Previous tab</td></tr>
+            <tr><td>Alt+Shift+L</td><td>Next tab</td></tr>
+            <tr><td>Alt+Shift+6</td><td>6 seconds</td></tr>
+            <tr><td>Alt+Shift+0</td><td>10 seconds</td></tr>
+            <tr><td>Alt+Shift+,</td><td>480p</td></tr>
+            <tr><td>Alt+Shift+.</td><td>720p</td></tr>
+            <tr><td>Alt+Shift+X</td><td>Spicy mood</td></tr>
+            <tr><td>Alt+Shift+F</td><td>Fun mood</td></tr>
+            <tr><td>Alt+Shift+N</td><td>Normal mood</td></tr>
+            <tr><td>Alt+Shift+D</td><td>Download</td></tr>
+          </table>
+        </details>
       </div>
     </div>
   </div>

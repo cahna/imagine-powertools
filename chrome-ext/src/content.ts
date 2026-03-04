@@ -328,8 +328,50 @@ function findMenuItemByText(text: string): Element | null {
 }
 
 // Click a video option (duration, resolution, or mood)
-// Supports both old UI (Video Options button) and new UI (Settings button)
+// Supports multiple UI versions:
+// - Latest UI: radiogroup buttons directly in the input bar
+// - Old UI: Video Options/Settings dropdown menu
 async function clickVideoOption(option: string): Promise<{ success: boolean; error?: string }> {
+  // Duration and resolution options
+  if (["6s", "10s", "480p", "720p"].includes(option)) {
+    // Try new UI first: radiogroup buttons directly visible in the input bar
+    const isResolution = ["480p", "720p"].includes(option);
+    const radioGroupLabel = isResolution ? "Video resolution" : "Video duration";
+    const radioGroup = document.querySelector(`div[aria-label="${radioGroupLabel}"]`);
+
+    if (radioGroup) {
+      // Find the radio button by its text content
+      const buttons = radioGroup.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
+      for (const btn of buttons) {
+        if (btn.textContent?.trim() === option) {
+          btn.click();
+          return { success: true };
+        }
+      }
+      return { success: false, error: `Option "${option}" not found in radiogroup` };
+    }
+
+    // Fallback: try old UI with aria-label buttons (may be in a dropdown)
+    const ariaLabelBtn = document.querySelector<HTMLButtonElement>(`button[aria-label="${option}"]`);
+    if (ariaLabelBtn) {
+      ariaLabelBtn.click();
+      return { success: true };
+    }
+
+    // Fallback: try opening Settings/Video Options dropdown menu
+    return await clickVideoOptionFromMenu(option);
+  }
+
+  // Mood options are always in menu
+  if (["spicy", "fun", "normal"].includes(option)) {
+    return await clickVideoOptionFromMenu(option);
+  }
+
+  return { success: false, error: `Unknown option: ${option}` };
+}
+
+// Helper: click video option from dropdown menu (old UI fallback)
+async function clickVideoOptionFromMenu(option: string): Promise<{ success: boolean; error?: string }> {
   // Find the Video Options button (old UI) or Settings button (new UI)
   let videoOptionsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Video Options"]');
   if (!videoOptionsBtn) {
@@ -483,8 +525,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
+  if (message.type === "clickDownload") {
+    const result = clickDownloadButton();
+    sendResponse(result);
+    return true;
+  }
+
   return false;
 });
+
+// Click the download button
+function clickDownloadButton(): { success: boolean; error?: string } {
+  const downloadBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Download"]');
+
+  if (!downloadBtn) {
+    return { success: false, error: "Download button not found" };
+  }
+
+  downloadBtn.click();
+  return { success: true };
+}
 
 // Extract image/video UUID from a masonry card element
 function getImageIdFromCard(card: Element): string | null {

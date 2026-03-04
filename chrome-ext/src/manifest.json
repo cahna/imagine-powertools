@@ -52,6 +52,9 @@
     },
     "video-normal": {
       "description": "Set video mood to Normal"
+    },
+    "download-video": {
+      "description": "Download the current video"
     }
   },
   "action": {

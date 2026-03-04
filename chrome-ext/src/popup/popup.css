@@ -269,6 +269,15 @@ h1 {
   margin-bottom: 12px;
 }
 
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.button-row .action-btn {
+  flex: 1;
+}
+
 .action-btn {
   width: 100%;
   padding: 8px 16px;
@@ -344,4 +353,55 @@ h1 {
 .import-status.error {
   background: #fee2e2;
   color: #991b1b;
+}
+
+/* Shortcuts Setup Section */
+.shortcuts-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.shortcuts-instructions {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.shortcuts-reference {
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.shortcuts-reference summary {
+  cursor: pointer;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.shortcuts-reference summary:hover {
+  text-decoration: underline;
+}
+
+.hotkeys-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.hotkeys-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.hotkeys-table td:first-child {
+  font-family: monospace;
+  color: #1f2937;
+  white-space: nowrap;
+}
+
+.hotkeys-table td:last-child {
+  color: #6b7280;
 }
