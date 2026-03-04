@@ -41,30 +41,8 @@
 
     <!-- Data tab content -->
     <div id="tab-data" class="tab-content">
-      <h2 class="section-title">Import / Export</h2>
-
-      <!-- Export -->
-      <div class="export-section">
-        <div class="button-row">
-          <button id="export-btn" class="action-btn">Export to Clipboard</button>
-          <button id="download-btn" class="action-btn">Download JSON</button>
-        </div>
-        <div id="export-result" class="export-result hidden">
-          <textarea id="export-data" class="data-textarea" readonly rows="6"></textarea>
-          <button id="copy-export-btn" class="secondary-btn">Copy to Clipboard</button>
-        </div>
-      </div>
-
-      <!-- Import -->
-      <div class="import-section">
-        <div class="button-row">
-          <input type="file" id="import-file" accept=".json" class="hidden">
-          <button id="import-file-btn" class="action-btn">Import from File</button>
-        </div>
-        <textarea id="import-data" class="data-textarea" placeholder="Or paste JSON data here..." rows="4"></textarea>
-        <button id="import-btn" class="action-btn">Import from Text (Merge)</button>
-        <p id="import-status" class="import-status hidden"></p>
-      </div>
+      <p class="data-description">Import, export, and manage your prompt history.</p>
+      <button id="open-data-page" class="action-btn">Open Data Manager</button>
 
       <!-- Shortcuts Setup (shown on chrome://extensions/shortcuts) -->
       <div id="shortcuts-section" class="shortcuts-section hidden">

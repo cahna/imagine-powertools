@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grok Imagine - Data Management</title>
+  <link rel="stylesheet" href="data.css">
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <h1>Grok Imagine Power Tools</h1>
+      <nav class="nav">
+        <button class="nav-btn active" data-tab="explorer">Explorer</button>
+        <button class="nav-btn" data-tab="import-export">Import / Export</button>
+      </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Explorer Tab -->
+      <div id="tab-explorer" class="tab-content active">
+        <div class="explorer">
+          <!-- Sources List -->
+          <aside class="sources-panel">
+            <div class="panel-header">
+              <h2>Sources</h2>
+              <span id="source-count" class="badge">0</span>
+            </div>
+            <div class="search-box">
+              <input type="text" id="source-search" placeholder="Search sources..." class="search-input">
+            </div>
+            <ul id="sources-list" class="sources-list">
+              <li class="empty-state">Loading...</li>
+            </ul>
+          </aside>
+
+          <!-- Prompts Panel -->
+          <section class="prompts-panel">
+            <div id="prompts-placeholder" class="placeholder">
+              <p>Select a source to view its prompts</p>
+            </div>
+            <div id="prompts-content" class="prompts-content hidden">
+              <div class="panel-header">
+                <div class="source-info">
+                  <a id="selected-source-link" href="#" target="_blank" class="source-link">
+                    <h2 id="selected-source-title">Source</h2>
+                  </a>
+                  <span id="prompt-count" class="badge">0 prompts</span>
+                </div>
+                <div class="panel-actions">
+                  <button id="add-prompt-btn" class="btn btn-primary btn-sm">Add Prompt</button>
+                  <button id="delete-source-btn" class="btn btn-danger btn-sm">Delete Source</button>
+                </div>
+              </div>
+              <ul id="prompts-list" class="prompts-list"></ul>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- Import/Export Tab -->
+      <div id="tab-import-export" class="tab-content">
+        <div class="container">
+          <div class="stats" id="stats">
+            <span class="stat-item">Loading...</span>
+          </div>
+
+          <!-- Export Section -->
+          <section class="section">
+            <h2>Export</h2>
+            <div class="button-row">
+              <button id="export-btn" class="btn btn-secondary">Copy to Clipboard</button>
+              <button id="download-btn" class="btn btn-secondary">Download JSON</button>
+            </div>
+          </section>
+
+          <!-- Import Section -->
+          <section class="section">
+            <h2>Import</h2>
+            <div class="button-row">
+              <input type="file" id="import-file" accept=".json" class="hidden">
+              <button id="import-file-btn" class="btn btn-primary">Import from File</button>
+            </div>
+            <div class="divider"><span>or</span></div>
+            <textarea id="import-data" class="data-textarea" placeholder="Paste JSON data here..." rows="8"></textarea>
+            <button id="import-btn" class="btn btn-secondary">Import from Text</button>
+            <p id="import-status" class="status-message hidden"></p>
+          </section>
+
+          <!-- Danger Zone -->
+          <section class="section danger-zone">
+            <h2>Danger Zone</h2>
+            <button id="clear-btn" class="btn btn-danger">Clear All Data</button>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Edit Prompt Modal -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title">Edit Prompt</h3>
+        <button id="modal-close" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <textarea id="modal-textarea" class="modal-textarea" rows="6"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="modal-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="modal-save" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+</body>
+</html>

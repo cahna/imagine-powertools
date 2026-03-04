@@ -27,6 +27,11 @@ function copyStaticFiles() {
   cpSync(join(srcDir, "popup/popup.html"), join(distDir, "popup/popup.html"));
   cpSync(join(srcDir, "popup/popup.css"), join(distDir, "popup/popup.css"));
 
+  // Copy data page HTML and CSS
+  mkdirSync(join(distDir, "data"), { recursive: true });
+  cpSync(join(srcDir, "data/data.html"), join(distDir, "data/data.html"));
+  cpSync(join(srcDir, "data/data.css"), join(distDir, "data/data.css"));
+
   // Copy icons if they exist
   const iconsDir = join(srcDir, "icons");
   if (existsSync(iconsDir)) {
@@ -69,6 +74,14 @@ async function build() {
     entryPoints: [join(srcDir, "popup/popup.ts")],
     outfile: join(distDir, "popup/popup.js"),
     format: "iife", // Popup scripts need IIFE format
+  });
+
+  // Build data page script
+  await esbuild.build({
+    ...commonOptions,
+    entryPoints: [join(srcDir, "data/data.ts")],
+    outfile: join(distDir, "data/data.js"),
+    format: "iife",
   });
 
   console.log("Build complete");
@@ -119,13 +132,25 @@ if (isWatch) {
     outfile: join(distDir, "popup/popup.js"),
   });
 
-  await Promise.all([bgCtx.watch(), contentCtx.watch(), popupCtx.watch()]);
+  // Data page script (watch)
+  const dataCtx = await esbuild.context({
+    bundle: true,
+    sourcemap: "inline",
+    target: "chrome120",
+    format: "iife",
+    entryPoints: [join(srcDir, "data/data.ts")],
+    outfile: join(distDir, "data/data.js"),
+  });
+
+  await Promise.all([bgCtx.watch(), contentCtx.watch(), popupCtx.watch(), dataCtx.watch()]);
 
   // Watch static files (CSS, HTML, manifest)
   const staticFiles = [
     join(srcDir, "manifest.json"),
     join(srcDir, "popup/popup.html"),
     join(srcDir, "popup/popup.css"),
+    join(srcDir, "data/data.html"),
+    join(srcDir, "data/data.css"),
   ];
 
   for (const file of staticFiles) {

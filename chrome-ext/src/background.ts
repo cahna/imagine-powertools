@@ -1,18 +1,8 @@
 // Background service worker for Grok Imagine Power Tools
 
+import { HistoryEntry, PostHistory, STORAGE_KEY, saveToPostHistory } from "./shared/storage";
+
 type Mode = "favorites" | "results" | "post" | "none";
-
-interface HistoryEntry {
-  text: string;
-  timestamp: number;
-}
-
-interface PostHistory {
-  [postId: string]: HistoryEntry[];
-}
-
-// Storage key for post history (must match popup)
-const STORAGE_KEY = "postHistory";
 
 // Video option types
 type VideoOption = "6s" | "10s" | "480p" | "720p" | "spicy" | "fun" | "normal";
@@ -271,6 +261,9 @@ chrome.commands.onCommand.addListener(async (command) => {
       }
 
       console.log("[Grok Imagine Power Tools] Re-submitting:", entry.text.substring(0, 50) + "...");
+
+      // Update history (increments submitCount)
+      await saveToPostHistory(sourceImageId, entry.text);
 
       // Send fillAndSubmit to the content script
       try {

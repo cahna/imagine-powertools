@@ -498,13 +498,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         const sourceImageId = message.sourceImageId;
 
-        // Check if text already exists in history
-        const currentHistory = await getPostHistory(sourceImageId);
-        const alreadyExists = currentHistory.some((entry) => entry.text === trimmed);
-
-        if (!alreadyExists) {
-          await saveToPostHistory(sourceImageId, trimmed);
-        }
+        // Save to history (handles duplicates by incrementing submitCount)
+        await saveToPostHistory(sourceImageId, trimmed);
 
         // Fill and submit
         const result = fillAndSubmitVideo(trimmed);

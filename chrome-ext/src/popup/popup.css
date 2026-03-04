@@ -65,6 +65,12 @@ h1 {
   display: block;
 }
 
+.data-description {
+  color: #6b7280;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
 .mode-section {
   display: flex;
   align-items: center;
