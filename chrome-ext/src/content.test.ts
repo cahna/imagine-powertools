@@ -4,6 +4,7 @@ import {
   clickVideoOption,
   fillAndSubmitVideo,
   findMenuItemByText,
+  detectGenerationOutcome,
 } from "./content.core";
 
 describe("detectMode", () => {
@@ -323,5 +324,221 @@ describe("findMenuItemByText", () => {
     const item = findMenuItemByText("NotFound");
 
     expect(item).toBeNull();
+  });
+});
+
+describe("detectGenerationOutcome", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  describe("rate limit detection", () => {
+    it("detects rate limit from notifications section", () => {
+      document.body.innerHTML = `
+        <section aria-label="Notifications alt+T">
+          <span>Rate limit reached</span>
+        </section>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("rate_limited");
+    });
+
+    it("detects rate limit with exact aria-label match", () => {
+      document.body.innerHTML = `
+        <section aria-label="Notifications">
+          <span>Rate limit reached</span>
+        </section>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("rate_limited");
+    });
+
+    it("rate limit takes priority over existing video", () => {
+      document.body.innerHTML = `
+        <section aria-label="Notifications alt+T">
+          <span>Rate limit reached</span>
+        </section>
+        <video id="sd-video" src="https://example.com/video.mp4"></video>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("rate_limited");
+    });
+  });
+
+  describe("generating detection", () => {
+    it("detects generating state from animate-pulse element", () => {
+      document.body.innerHTML = `
+        <div class="animate-pulse">Generating</div>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("generating");
+    });
+
+    it("extracts progress percentage when present", () => {
+      document.body.innerHTML = `
+        <div class="animate-pulse">Generating 45%</div>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("generating");
+      expect(result).toHaveProperty("progress", "45%");
+    });
+
+    it("detects generating from Cancel Video button", () => {
+      document.body.innerHTML = `
+        <button>Cancel Video</button>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("generating");
+    });
+
+    it("generating takes priority over existing video", () => {
+      // This is the key test for the fix - when there's an existing video
+      // AND a generating indicator, we should detect "generating"
+      document.body.innerHTML = `
+        <div class="animate-pulse">Generating 10%</div>
+        <video id="sd-video" src="https://example.com/existing-video.mp4"></video>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("generating");
+      expect(result).toHaveProperty("progress", "10%");
+    });
+
+    it("Cancel Video button takes priority over existing video", () => {
+      document.body.innerHTML = `
+        <button>Cancel Video</button>
+        <video id="hd-video" src="https://example.com/existing-video.mp4"></video>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("generating");
+    });
+  });
+
+  describe("moderated detection", () => {
+    it("detects moderated result from image alt", () => {
+      document.body.innerHTML = `
+        <img alt="Moderated" src="moderated.jpg" />
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("moderated");
+    });
+
+    it("moderated takes priority over existing video", () => {
+      document.body.innerHTML = `
+        <img alt="Moderated" src="moderated.jpg" />
+        <video id="sd-video" src="https://example.com/video.mp4"></video>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("moderated");
+    });
+  });
+
+  describe("success detection", () => {
+    it("detects success from sd-video with mp4 src", () => {
+      document.body.innerHTML = `
+        <video id="sd-video" src="https://example.com/video.mp4"></video>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("success");
+    });
+
+    it("detects success from hd-video with mp4 src", () => {
+      document.body.innerHTML = `
+        <video id="hd-video" src="https://example.com/video.mp4"></video>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("success");
+    });
+
+    it("does not detect success from video without mp4 src", () => {
+      document.body.innerHTML = `
+        <video id="sd-video" src=""></video>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("unknown");
+    });
+  });
+
+  describe("unknown state", () => {
+    it("returns unknown when no indicators present", () => {
+      document.body.innerHTML = `
+        <div>Some other content</div>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("unknown");
+    });
+
+    it("returns unknown for empty body", () => {
+      document.body.innerHTML = "";
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("unknown");
+    });
+  });
+
+  describe("priority order", () => {
+    it("rate_limited > generating > moderated > success", () => {
+      // All indicators present - rate_limited should win
+      document.body.innerHTML = `
+        <section aria-label="Notifications">Rate limit reached</section>
+        <div class="animate-pulse">Generating 50%</div>
+        <img alt="Moderated" />
+        <video id="sd-video" src="video.mp4"></video>
+      `;
+
+      expect(detectGenerationOutcome().type).toBe("rate_limited");
+
+      // Remove rate limit - generating should win
+      document.body.innerHTML = `
+        <div class="animate-pulse">Generating 50%</div>
+        <img alt="Moderated" />
+        <video id="sd-video" src="video.mp4"></video>
+      `;
+
+      expect(detectGenerationOutcome().type).toBe("generating");
+
+      // Remove generating - moderated should win
+      document.body.innerHTML = `
+        <img alt="Moderated" />
+        <video id="sd-video" src="video.mp4"></video>
+      `;
+
+      expect(detectGenerationOutcome().type).toBe("moderated");
+
+      // Remove moderated - success should win
+      document.body.innerHTML = `
+        <video id="sd-video" src="video.mp4"></video>
+      `;
+
+      expect(detectGenerationOutcome().type).toBe("success");
+    });
   });
 });

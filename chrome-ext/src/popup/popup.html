@@ -30,6 +30,21 @@
           <textarea id="post-input" class="post-input" placeholder="Enter text..." rows="3"></textarea>
           <button type="submit" class="submit-btn">Submit</button>
         </form>
+
+        <!-- Autosubmit row -->
+        <div class="autosubmit-row">
+          <label class="autosubmit-label">
+            Retries:
+            <input type="number" id="autosubmit-count" class="autosubmit-input" min="1" max="100" value="10">
+          </label>
+          <button type="button" id="autosubmit-btn" class="autosubmit-btn">Autosubmit</button>
+        </div>
+
+        <!-- Autosubmit status (shown when running) -->
+        <div id="autosubmit-status" class="autosubmit-status hidden">
+          <span id="autosubmit-progress">Attempt 1/10 - Submitting...</span>
+          <button type="button" id="autosubmit-cancel" class="cancel-btn">Cancel</button>
+        </div>
         <div class="history-section">
           <h2 class="history-title">History</h2>
           <ul id="history-list" class="history-list">

@@ -2,15 +2,257 @@
 
 import {
   type Mode,
+  type GenerationOutcome,
   detectMode,
   fillAndSubmitVideo,
   clickVideoOption,
   setReactInputValue,
+  detectGenerationOutcome,
+  waitForOutcome,
 } from "./content.core";
+import { logger } from "./shared/logger";
 
 export type { Mode };
 
 let currentMode: Mode = "none";
+
+// =============================================================================
+// Autosubmit Feature State
+// =============================================================================
+
+type AutosubmitState =
+  | { status: "idle" }
+  | {
+      status: "running";
+      attempt: number;
+      maxRetries: number;
+      phase: "submitting" | "generating" | "waiting";
+    }
+  | { status: "success"; attempt: number }
+  | {
+      status: "stopped";
+      reason:
+        | "cancelled"
+        | "rate_limited"
+        | "max_retries"
+        | "timeout"
+        | "navigated";
+      attempt: number;
+    };
+
+let autosubmitState: AutosubmitState = { status: "idle" };
+let autosubmitAbortController: AbortController | null = null;
+
+const ATTEMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per attempt
+const RETRY_DELAY_MS = 1000; // 1 second delay before retry
+const GENERATION_START_TIMEOUT_MS = 10000; // 10 seconds to wait for generation to start
+
+// Broadcast autosubmit status to popup (if open)
+function broadcastAutosubmitStatus(): void {
+  chrome.runtime
+    .sendMessage({
+      type: "autosubmit:status",
+      state: autosubmitState,
+    })
+    .catch(() => {
+      // Popup may be closed, ignore errors
+    });
+}
+
+// Main autosubmit loop
+async function runAutosubmit(maxRetries: number): Promise<void> {
+  if (autosubmitState.status === "running") {
+    logger.log("Autosubmit already running, ignoring");
+    return;
+  }
+
+  logger.log(`Starting autosubmit with maxRetries=${maxRetries}`);
+
+  autosubmitAbortController = new AbortController();
+  const signal = autosubmitAbortController.signal;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    if (signal.aborted) {
+      logger.log("Autosubmit aborted");
+      break;
+    }
+
+    // Check we're still in post mode
+    if (detectMode() !== "post") {
+      logger.log("No longer in post mode, stopping");
+      autosubmitState = { status: "stopped", reason: "navigated", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    // Update state: submitting
+    autosubmitState = {
+      status: "running",
+      attempt,
+      maxRetries,
+      phase: "submitting",
+    };
+    broadcastAutosubmitStatus();
+    logger.log(`Autosubmit attempt ${attempt}/${maxRetries} - submitting`);
+
+    // Get the source image ID
+    const sourceImageId = getSourceImageId();
+    if (!sourceImageId) {
+      logger.error("Could not get source image ID");
+      autosubmitState = { status: "stopped", reason: "navigated", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    // Get the most recent history entry via background script
+    const historyResponse = await new Promise<{
+      success: boolean;
+      entries?: HistoryEntry[];
+    }>((resolve) => {
+      chrome.runtime.sendMessage(
+        { type: "storage:getPostHistory", postId: sourceImageId },
+        (response) => resolve(response || { success: false })
+      );
+    });
+
+    if (!historyResponse.success || !historyResponse.entries?.length) {
+      logger.error("No history entries to resubmit");
+      autosubmitState = { status: "stopped", reason: "cancelled", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    // Get the most recent entry
+    const sorted = [...historyResponse.entries].sort(
+      (a, b) => b.timestamp - a.timestamp
+    );
+    const mostRecent = sorted[0];
+    logger.log(`Resubmitting prompt: "${mostRecent.text.substring(0, 50)}..."`);
+
+    // Fill and submit
+    const submitResult = fillAndSubmitVideo(mostRecent.text);
+    if (!submitResult.success) {
+      logger.error("Fill and submit failed:", submitResult.error);
+      autosubmitState = { status: "stopped", reason: "cancelled", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    // Update state: generating
+    autosubmitState = {
+      status: "running",
+      attempt,
+      maxRetries,
+      phase: "generating",
+    };
+    broadcastAutosubmitStatus();
+
+    // Wait for generation to start (look for "Generating" or rate limit)
+    logger.log("Waiting for generation to start...");
+    const startOutcome = await waitForOutcome(
+      ["generating", "rate_limited"],
+      GENERATION_START_TIMEOUT_MS,
+      signal
+    );
+
+    if (signal.aborted) break;
+
+    if (startOutcome?.type === "rate_limited") {
+      logger.log("Rate limited, stopping");
+      autosubmitState = { status: "stopped", reason: "rate_limited", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    if (!startOutcome || startOutcome.type !== "generating") {
+      logger.log("Generation did not start, stopping");
+      autosubmitState = { status: "stopped", reason: "timeout", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    // Update state: waiting for result
+    autosubmitState = {
+      status: "running",
+      attempt,
+      maxRetries,
+      phase: "waiting",
+    };
+    broadcastAutosubmitStatus();
+
+    // Wait for outcome (success, moderated, or rate limited)
+    logger.log("Waiting for generation outcome...");
+    const outcome = await waitForOutcome(
+      ["success", "moderated", "rate_limited"],
+      ATTEMPT_TIMEOUT_MS,
+      signal
+    );
+
+    if (signal.aborted) break;
+
+    if (!outcome) {
+      logger.log("Timeout waiting for outcome");
+      autosubmitState = { status: "stopped", reason: "timeout", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    logger.log(`Outcome: ${outcome.type}`);
+
+    if (outcome.type === "success") {
+      logger.log("Video generated successfully!");
+      autosubmitState = { status: "success", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    if (outcome.type === "rate_limited") {
+      logger.log("Rate limited, stopping");
+      autosubmitState = { status: "stopped", reason: "rate_limited", attempt };
+      broadcastAutosubmitStatus();
+      break;
+    }
+
+    if (outcome.type === "moderated") {
+      if (attempt < maxRetries) {
+        logger.log(`Moderated, retrying in ${RETRY_DELAY_MS}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue; // Next attempt
+      } else {
+        logger.log("Moderated, max retries reached");
+        autosubmitState = {
+          status: "stopped",
+          reason: "max_retries",
+          attempt,
+        };
+        broadcastAutosubmitStatus();
+        break;
+      }
+    }
+  }
+
+  autosubmitAbortController = null;
+  logger.log("Autosubmit finished, final state:", autosubmitState);
+}
+
+// Cancel the autosubmit loop
+function cancelAutosubmit(): void {
+  if (autosubmitAbortController) {
+    logger.log("Cancelling autosubmit");
+    autosubmitAbortController.abort();
+    autosubmitState = {
+      status: "stopped",
+      reason: "cancelled",
+      attempt:
+        autosubmitState.status === "running" ? autosubmitState.attempt : 0,
+    };
+    broadcastAutosubmitStatus();
+  }
+}
+
+// =============================================================================
+// URL/ID Extraction
+// =============================================================================
 
 // Extract post ID from URL if on a post page
 function getPostId(): string | null {
@@ -83,9 +325,7 @@ function checkModeChange(): void {
     const previousMode = currentMode;
     currentMode = newMode;
 
-    console.log(
-      `[Grok Imagine Power Tools] Mode changed: ${previousMode} -> ${newMode}`
-    );
+    logger.log(`Mode changed: ${previousMode} -> ${newMode}`);
 
     sendModeUpdate(newMode);
   }
@@ -142,17 +382,14 @@ function setupHistoryInterception(): void {
   const originalPushState = history.pushState.bind(history);
   history.pushState = function (...args) {
     const url = args[2] as string | undefined;
-    console.log("[Grok Imagine Power Tools] pushState called:", {
-      url,
-      interceptorEnabled: navigationInterceptor?.enabled,
-    });
+    logger.log("pushState called:", { url, interceptorEnabled: navigationInterceptor?.enabled });
 
     // Check if we're intercepting navigation to capture UUID
     if (navigationInterceptor?.enabled) {
       if (url?.includes("/imagine/post/")) {
         // Capture the URL
         navigationInterceptor.capturedUrl = url;
-        console.log("[Grok Imagine Power Tools] Captured navigation URL:", url);
+        logger.log("Captured navigation URL:", url);
 
         // Still call pushState so browser history is updated
         originalPushState(...args);
@@ -243,7 +480,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const result = fillAndSubmitVideo(trimmed);
         sendResponse(result);
       } catch (error) {
-        console.error("[Grok Imagine Power Tools] Clipboard read failed:", error);
+        logger.error("Clipboard read failed:", error);
         sendResponse({ success: false, error: "Failed to read clipboard" });
       }
     })();
@@ -261,6 +498,33 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "clickDownload") {
     const result = clickDownloadButton();
     sendResponse(result);
+    return true;
+  }
+
+  // Autosubmit message handlers
+  if (message.type === "autosubmit:start") {
+    const { maxRetries } = message;
+    logger.log(`Received autosubmit:start with maxRetries=${maxRetries}`);
+
+    // Run asynchronously
+    (async () => {
+      await runAutosubmit(maxRetries);
+    })();
+
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (message.type === "autosubmit:cancel") {
+    logger.log("Received autosubmit:cancel");
+    cancelAutosubmit();
+    sendResponse({ success: true, state: autosubmitState });
+    return true;
+  }
+
+  if (message.type === "autosubmit:getState") {
+    logger.log("Received autosubmit:getState, state:", autosubmitState);
+    sendResponse({ state: autosubmitState });
     return true;
   }
 
@@ -376,7 +640,7 @@ function setupFavoritesClickHandler(): void {
 
     // Fallback: simulate click and capture navigation URL (for fresh result images)
     if (!imageId) {
-      console.log("[Grok Imagine Power Tools] Attempting navigation capture fallback");
+      logger.log("Attempting navigation capture fallback");
       const scrollY = window.scrollY;
       const originalUrl = window.location.href;
 
@@ -390,7 +654,7 @@ function setupFavoritesClickHandler(): void {
 
       // Dispatch on the image or card
       const clickTarget = card.querySelector("img") || card;
-      console.log("[Grok Imagine Power Tools] Dispatching synthetic click on:", clickTarget.tagName);
+      logger.log("Dispatching synthetic click on:", clickTarget.tagName);
       clickTarget.dispatchEvent(syntheticClick);
 
       // Poll for URL change (React navigation is async)
@@ -398,7 +662,7 @@ function setupFavoritesClickHandler(): void {
         await new Promise((resolve) => setTimeout(resolve, 50));
 
         if (window.location.href !== originalUrl) {
-          console.log("[Grok Imagine Power Tools] URL changed to:", window.location.href);
+          logger.log("URL changed to:", window.location.href);
           const match = window.location.pathname.match(/\/imagine\/post\/([^/?]+)/);
           if (match) {
             imageId = match[1];
@@ -413,7 +677,7 @@ function setupFavoritesClickHandler(): void {
       }
 
       if (!imageId) {
-        console.log("[Grok Imagine Power Tools] URL did not change after synthetic click");
+        logger.log("URL did not change after synthetic click");
       }
     }
 
@@ -421,18 +685,18 @@ function setupFavoritesClickHandler(): void {
       const url = `https://grok.com/imagine/post/${imageId}`;
       chrome.runtime.sendMessage({ type: "openTab", url });
     } else {
-      console.log("[Grok Imagine Power Tools] Could not extract image/video ID from card");
+      logger.log("Could not extract image/video ID from card");
     }
   }, true); // Use capture phase to intercept before React handlers
 }
 
 // Initialize
 function init(): void {
-  console.log("[Grok Imagine Power Tools] Content script loaded");
+  logger.log("Content script loaded");
 
   // Initial mode detection
   currentMode = detectMode();
-  console.log(`[Grok Imagine Power Tools] Initial mode: ${currentMode}`);
+  logger.log(`Initial mode: ${currentMode}`);
   sendModeUpdate(currentMode);
 
   // Set up observers

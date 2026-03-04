@@ -5,6 +5,7 @@ import {
   getPostHistory,
   saveToPostHistory,
 } from "./shared/storage";
+import { logger } from "./shared/logger";
 
 type Mode = "favorites" | "results" | "post" | "none";
 
@@ -108,7 +109,7 @@ async function getMostRecentHistoryEntry(postId: string): Promise<HistoryEntry |
     const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
     return sorted[0];
   } catch (error) {
-    console.error("[Imagine Power Tools] Failed to get history:", error);
+    logger.error("Failed to get history:", error);
     return null;
   }
 }
@@ -120,9 +121,9 @@ async function getMostRecentHistoryEntry(postId: string): Promise<HistoryEntry |
 // Listen for extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
-    console.log("[Imagine Power Tools] Extension installed");
+    logger.log("Extension installed");
   } else if (details.reason === "update") {
-    console.log("[Imagine Power Tools] Extension updated");
+    logger.log("Extension updated");
   }
 });
 
@@ -138,8 +139,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (tabId !== undefined) {
         const previousMode = tabModes.get(tabId);
         tabModes.set(tabId, message.mode);
-        console.log(
-          `[Imagine Power Tools] Tab ${tabId} mode: ${previousMode ?? "unknown"} -> ${message.mode}`
+        logger.log(
+          `Tab ${tabId} mode: ${previousMode ?? "unknown"} -> ${message.mode}`
         );
       }
       sendResponse({ status: "ok" });
@@ -165,7 +166,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const entries = await getCachedPostHistory(message.postId);
           sendResponse({ success: true, entries });
         } catch (error) {
-          console.error("[Imagine Power Tools] storage:getPostHistory failed:", error);
+          logger.error("storage:getPostHistory failed:", error);
           sendResponse({ success: false, error: String(error) });
         }
       })();
@@ -178,7 +179,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await cachedSaveToPostHistory(message.postId, message.text);
           sendResponse({ success: true });
         } catch (error) {
-          console.error("[Imagine Power Tools] storage:saveToPostHistory failed:", error);
+          logger.error("storage:saveToPostHistory failed:", error);
           sendResponse({ success: false, error: String(error) });
         }
       })();
@@ -196,7 +197,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabModes.has(tabId)) {
     tabModes.delete(tabId);
-    console.log(`[Imagine Power Tools] Cleaned up mode for tab ${tabId}`);
+    logger.log(`Cleaned up mode for tab ${tabId}`);
   }
 });
 
@@ -247,19 +248,19 @@ chrome.commands.onCommand.addListener(async (command) => {
   // Video option commands
   if (command in VIDEO_COMMANDS) {
     const option = VIDEO_COMMANDS[command];
-    console.log(`[Imagine Power Tools] Video option command: ${option}`);
+    logger.log(`Video option command: ${option}`);
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
       if (!tab?.id) {
-        console.log("[Imagine Power Tools] No active tab found");
+        logger.log("No active tab found");
         return;
       }
 
       const url = tab.url || "";
       if (!url.startsWith("https://grok.com/imagine")) {
-        console.log("[Imagine Power Tools] Not on grok.com/imagine page");
+        logger.log("Not on grok.com/imagine page");
         return;
       }
 
@@ -271,32 +272,32 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Imagine Power Tools] Click video option failed:", result.error);
+          logger.error("Click video option failed:", result.error);
         }
       } catch (error) {
-        console.error("[Imagine Power Tools] Failed to send clickVideoOption:", error);
+        logger.error("Failed to send clickVideoOption:", error);
       }
     } catch (error) {
-      console.error("[Imagine Power Tools] Video option command error:", error);
+      logger.error("Video option command error:", error);
     }
     return;
   }
 
   // Download video command
   if (command === "download-video") {
-    console.log("[Imagine Power Tools] Download video command triggered");
+    logger.log("Download video command triggered");
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
       if (!tab?.id) {
-        console.log("[Imagine Power Tools] No active tab found");
+        logger.log("No active tab found");
         return;
       }
 
       const url = tab.url || "";
       if (!url.startsWith("https://grok.com/imagine")) {
-        console.log("[Imagine Power Tools] Not on grok.com/imagine page");
+        logger.log("Not on grok.com/imagine page");
         return;
       }
 
@@ -307,13 +308,13 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Imagine Power Tools] Click download failed:", result.error);
+          logger.error("Click download failed:", result.error);
         }
       } catch (error) {
-        console.error("[Imagine Power Tools] Failed to send clickDownload:", error);
+        logger.error("Failed to send clickDownload:", error);
       }
     } catch (error) {
-      console.error("[Imagine Power Tools] Download command error:", error);
+      logger.error("Download command error:", error);
     }
     return;
   }
@@ -322,21 +323,21 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
-  console.log(`[Imagine Power Tools] ${command} command triggered`);
+  logger.log(`${command} command triggered`);
 
   try {
     // Get the active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id) {
-      console.log("[Imagine Power Tools] No active tab found");
+      logger.log("No active tab found");
       return;
     }
 
     // Check if we're on a grok.com/imagine page
     const url = tab.url || "";
     if (!url.startsWith("https://grok.com/imagine")) {
-      console.log("[Imagine Power Tools] Not on grok.com/imagine page");
+      logger.log("Not on grok.com/imagine page");
       return;
     }
 
@@ -345,24 +346,24 @@ chrome.commands.onCommand.addListener(async (command) => {
     try {
       modeResponse = await chrome.tabs.sendMessage(tab.id, { type: "getMode" });
     } catch (error) {
-      console.log("[Imagine Power Tools] Content script not responding:", error);
+      logger.log("Content script not responding:", error);
       return;
     }
 
     if (!modeResponse) {
-      console.log("[Imagine Power Tools] No response from content script");
+      logger.log("No response from content script");
       return;
     }
 
     const { mode, sourceImageId } = modeResponse;
 
     if (mode !== "post") {
-      console.log("[Imagine Power Tools] Not in post mode, current mode:", mode);
+      logger.log("Not in post mode, current mode:", mode);
       return;
     }
 
     if (!sourceImageId) {
-      console.log("[Imagine Power Tools] No source image ID available");
+      logger.log("No source image ID available");
       return;
     }
 
@@ -371,11 +372,11 @@ chrome.commands.onCommand.addListener(async (command) => {
       const entry = await getMostRecentHistoryEntry(sourceImageId);
 
       if (!entry) {
-        console.log("[Imagine Power Tools] No history entries for source image:", sourceImageId);
+        logger.log("No history entries for source image:", sourceImageId);
         return;
       }
 
-      console.log("[Imagine Power Tools] Re-submitting:", entry.text.substring(0, 50) + "...");
+      logger.log("Re-submitting:", entry.text.substring(0, 50) + "...");
 
       // Update history (increments submitCount) and invalidate cache
       await cachedSaveToPostHistory(sourceImageId, entry.text);
@@ -388,10 +389,10 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Imagine Power Tools] Fill and submit failed:", result.error);
+          logger.error("Fill and submit failed:", result.error);
         }
       } catch (error) {
-        console.error("[Imagine Power Tools] Failed to send fillAndSubmit:", error);
+        logger.error("Failed to send fillAndSubmit:", error);
       }
     } else if (command === "submit-clipboard") {
       // Send submitFromClipboard to the content script
@@ -402,14 +403,14 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Imagine Power Tools] Submit from clipboard failed:", result.error);
+          logger.error("Submit from clipboard failed:", result.error);
         }
       } catch (error) {
-        console.error("[Imagine Power Tools] Failed to send submitFromClipboard:", error);
+        logger.error("Failed to send submitFromClipboard:", error);
       }
     }
   } catch (error) {
-    console.error("[Imagine Power Tools] Command handler error:", error);
+    logger.error("Command handler error:", error);
   }
 });
 

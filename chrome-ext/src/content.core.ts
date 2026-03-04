@@ -1,6 +1,8 @@
 // Core functions extracted for testability
 // These are imported by both content.ts and tests
 
+import { logger } from "./shared/logger";
+
 export type Mode = "favorites" | "results" | "post" | "none";
 
 // Detect the current mode based on URL and page content
@@ -253,4 +255,121 @@ export async function clickVideoOption(option: string): Promise<{ success: boole
   }
 
   return { success: false, error: `Unknown option: ${option}` };
+}
+
+// =============================================================================
+// Autosubmit Detection Helpers
+// =============================================================================
+
+export type GenerationOutcome =
+  | { type: "generating"; progress?: string }
+  | { type: "success" }
+  | { type: "moderated" }
+  | { type: "rate_limited" }
+  | { type: "unknown" };
+
+// Detect current generation state from DOM
+export function detectGenerationOutcome(): GenerationOutcome {
+  // Check for rate limit toast first (highest priority - stop immediately)
+  // Note: aria-label may include keyboard shortcut hint (e.g., "Notifications alt+T")
+  const notifications = document.querySelector(
+    'section[aria-label^="Notifications"]'
+  );
+  if (notifications?.textContent?.includes("Rate limit reached")) {
+    logger.log("Detected: rate_limited");
+    return { type: "rate_limited" };
+  }
+
+  // Check for generation in progress BEFORE checking for video
+  // (page may have existing video from previous generation)
+  const pulsingElement = document.querySelector(".animate-pulse");
+  if (pulsingElement?.textContent?.includes("Generating")) {
+    const match = pulsingElement.textContent.match(/Generating\s*(\d+%)?/);
+    const progress = match?.[1];
+    return { type: "generating", progress };
+  }
+
+  // Alternative: Cancel Video button indicates generation in progress
+  const cancelBtn = Array.from(document.querySelectorAll("button")).find(
+    (btn) => btn.textContent?.includes("Cancel Video")
+  );
+  if (cancelBtn) {
+    return { type: "generating" };
+  }
+
+  // Check for moderated result
+  const moderatedImg =
+    document.querySelector<HTMLImageElement>('img[alt="Moderated"]');
+  if (moderatedImg) {
+    logger.log("Detected: moderated");
+    return { type: "moderated" };
+  }
+
+  // Check for successful video (video element with .mp4 src)
+  // Only reaches here if no active generation is in progress
+  const sdVideo = document.querySelector<HTMLVideoElement>("video#sd-video");
+  const hdVideo = document.querySelector<HTMLVideoElement>("video#hd-video");
+  if (sdVideo?.src?.includes(".mp4") || hdVideo?.src?.includes(".mp4")) {
+    logger.log("Detected: success (video found)");
+    return { type: "success" };
+  }
+
+  return { type: "unknown" };
+}
+
+// Wait for a specific outcome with timeout and abort signal support
+export function waitForOutcome(
+  targetTypes: GenerationOutcome["type"][],
+  timeout: number,
+  signal?: AbortSignal
+): Promise<GenerationOutcome | null> {
+  return new Promise((resolve) => {
+    // Check if already aborted
+    if (signal?.aborted) {
+      logger.log("waitForOutcome: already aborted");
+      resolve(null);
+      return;
+    }
+
+    // Check immediately first
+    const immediate = detectGenerationOutcome();
+    if (targetTypes.includes(immediate.type)) {
+      logger.log(`waitForOutcome: immediate match (${immediate.type})`);
+      resolve(immediate);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      logger.log("waitForOutcome: timeout");
+      observer.disconnect();
+      signal?.removeEventListener("abort", abortHandler);
+      resolve(null);
+    }, timeout);
+
+    const abortHandler = () => {
+      logger.log("waitForOutcome: aborted");
+      clearTimeout(timeoutId);
+      observer.disconnect();
+      resolve(null);
+    };
+
+    signal?.addEventListener("abort", abortHandler);
+
+    const observer = new MutationObserver(() => {
+      const outcome = detectGenerationOutcome();
+      if (targetTypes.includes(outcome.type)) {
+        logger.log(`waitForOutcome: match found (${outcome.type})`);
+        clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", abortHandler);
+        observer.disconnect();
+        resolve(outcome);
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  });
 }

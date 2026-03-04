@@ -411,3 +411,117 @@ h1 {
 .hotkeys-table td:last-child {
   color: #6b7280;
 }
+
+/* Autosubmit UI */
+.autosubmit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.autosubmit-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.autosubmit-input {
+  width: 60px;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.autosubmit-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.autosubmit-btn {
+  flex: 1;
+  padding: 6px 12px;
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.autosubmit-btn:hover {
+  background: #059669;
+}
+
+.autosubmit-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.autosubmit-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+}
+
+.autosubmit-status.success {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+}
+
+.autosubmit-status.stopped {
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.autosubmit-status.error {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+#autosubmit-progress {
+  font-size: 12px;
+  color: #1e40af;
+  flex: 1;
+}
+
+.autosubmit-status.success #autosubmit-progress {
+  color: #065f46;
+}
+
+.autosubmit-status.stopped #autosubmit-progress {
+  color: #92400e;
+}
+
+.autosubmit-status.error #autosubmit-progress {
+  color: #991b1b;
+}
+
+.cancel-btn {
+  padding: 4px 10px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.cancel-btn:hover {
+  background: #dc2626;
+}

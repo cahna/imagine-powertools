@@ -6,8 +6,43 @@ import {
   saveToPostHistory,
   deleteFromPostHistory,
 } from "../shared/storage";
+import { logger } from "../shared/logger";
 
 type Mode = "favorites" | "results" | "post" | "none";
+
+type AutosubmitState =
+  | { status: "idle" }
+  | {
+      status: "running";
+      attempt: number;
+      maxRetries: number;
+      phase: "submitting" | "generating" | "waiting";
+    }
+  | { status: "success"; attempt: number }
+  | {
+      status: "stopped";
+      reason:
+        | "cancelled"
+        | "rate_limited"
+        | "max_retries"
+        | "timeout"
+        | "navigated";
+      attempt: number;
+    };
+
+const PHASE_LABELS: Record<string, string> = {
+  submitting: "Submitting...",
+  generating: "Generating...",
+  waiting: "Waiting for result...",
+};
+
+const STOP_REASON_LABELS: Record<string, string> = {
+  cancelled: "Cancelled",
+  rate_limited: "Rate limited",
+  max_retries: "Max retries reached",
+  timeout: "Timeout",
+  navigated: "Page navigated away",
+};
 
 const MODE_LABELS: Record<Mode, string> = {
   favorites: "Favorites",
@@ -391,17 +426,137 @@ document.addEventListener("DOMContentLoaded", async () => {
           });
 
           if (result && !result.success) {
-            console.error("Failed to fill and submit:", result.error);
+            logger.error("Failed to fill and submit:", result.error);
           }
         } catch (err) {
-          console.error("Failed to communicate with content script:", err);
+          logger.error("Failed to communicate with content script:", err);
         }
       });
+
+      // =======================================================================
+      // Autosubmit UI Setup
+      // =======================================================================
+      const autosubmitBtn = document.getElementById(
+        "autosubmit-btn"
+      ) as HTMLButtonElement | null;
+      const autosubmitCountInput = document.getElementById(
+        "autosubmit-count"
+      ) as HTMLInputElement | null;
+      const autosubmitStatusEl = document.getElementById("autosubmit-status");
+      const autosubmitProgressEl = document.getElementById("autosubmit-progress");
+      const autosubmitCancelBtn = document.getElementById(
+        "autosubmit-cancel"
+      ) as HTMLButtonElement | null;
+
+      // Update UI based on autosubmit state
+      function updateAutosubmitUI(state: AutosubmitState): void {
+        if (
+          !autosubmitStatusEl ||
+          !autosubmitProgressEl ||
+          !autosubmitBtn ||
+          !autosubmitCancelBtn
+        )
+          return;
+
+        logger.log("Autosubmit state update:", state);
+
+        if (state.status === "idle") {
+          autosubmitStatusEl.classList.add("hidden");
+          autosubmitBtn.disabled = false;
+          return;
+        }
+
+        autosubmitStatusEl.classList.remove("hidden");
+        autosubmitStatusEl.className = "autosubmit-status"; // Reset classes
+
+        if (state.status === "running") {
+          autosubmitBtn.disabled = true;
+          autosubmitCancelBtn.classList.remove("hidden");
+          const phaseLabel = PHASE_LABELS[state.phase] || state.phase;
+          autosubmitProgressEl.textContent = `Attempt ${state.attempt}/${state.maxRetries} - ${phaseLabel}`;
+        } else if (state.status === "success") {
+          autosubmitBtn.disabled = false;
+          autosubmitCancelBtn.classList.add("hidden");
+          autosubmitStatusEl.classList.add("success");
+          autosubmitProgressEl.textContent = `Success on attempt ${state.attempt}!`;
+        } else if (state.status === "stopped") {
+          autosubmitBtn.disabled = false;
+          autosubmitCancelBtn.classList.add("hidden");
+          const reasonLabel = STOP_REASON_LABELS[state.reason] || state.reason;
+          autosubmitStatusEl.classList.add(
+            state.reason === "rate_limited" ? "error" : "stopped"
+          );
+          autosubmitProgressEl.textContent = `Stopped: ${reasonLabel} (attempt ${state.attempt})`;
+        }
+      }
+
+      // Query current autosubmit state on popup open
+      try {
+        const stateResponse = await chrome.tabs.sendMessage(tab.id!, {
+          type: "autosubmit:getState",
+        });
+        if (stateResponse?.state) {
+          logger.log("Initial autosubmit state:", stateResponse.state);
+          updateAutosubmitUI(stateResponse.state);
+        }
+      } catch (err) {
+        logger.log("Could not get autosubmit state:", err);
+      }
+
+      // Listen for autosubmit status updates from content script
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message.type === "autosubmit:status" && message.state) {
+          logger.log("Received autosubmit:status:", message.state);
+          updateAutosubmitUI(message.state);
+        }
+      });
+
+      // Autosubmit button click handler
+      if (autosubmitBtn && autosubmitCountInput) {
+        autosubmitBtn.addEventListener("click", async () => {
+          const maxRetries = Math.max(
+            1,
+            parseInt(autosubmitCountInput.value, 10) || 10
+          );
+          logger.log(`Starting autosubmit with maxRetries=${maxRetries}`);
+
+          // First, submit the current prompt (like clicking Submit)
+          const text = postInput.value.trim();
+          if (text) {
+            await saveToPostHistory(sourceImageId, text);
+            const updatedHistory = await getPostHistory(sourceImageId);
+            renderHistory(updatedHistory, historyList, historyOptions);
+            postInput.value = "";
+          }
+
+          // Now start autosubmit
+          try {
+            await chrome.tabs.sendMessage(tab.id!, {
+              type: "autosubmit:start",
+              maxRetries,
+            });
+          } catch (err) {
+            logger.error("Failed to start autosubmit:", err);
+          }
+        });
+      }
+
+      // Cancel button click handler
+      if (autosubmitCancelBtn) {
+        autosubmitCancelBtn.addEventListener("click", async () => {
+          logger.log("Cancelling autosubmit");
+          try {
+            await chrome.tabs.sendMessage(tab.id!, { type: "autosubmit:cancel" });
+          } catch (err) {
+            logger.error("Failed to cancel autosubmit:", err);
+          }
+        });
+      }
     } else if (mode === "post" && !sourceImageId && postUi && statusEl) {
       statusEl.textContent = "Could not detect source image";
     }
   } catch (error) {
-    console.error("Failed to get mode:", error);
+    logger.error("Failed to get mode:", error);
     if (modeBadge) {
       modeBadge.textContent = "Error";
       modeBadge.className = "mode-badge mode-none";
