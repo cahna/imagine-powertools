@@ -210,21 +210,46 @@ function setReactInputValue(element: HTMLInputElement | HTMLTextAreaElement, val
   element.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-// Fill the video prompt textarea and click the Make video button
+// Set content in a tiptap/ProseMirror contenteditable element
+function setTiptapContent(element: HTMLElement, text: string): void {
+  // Focus the element
+  element.focus();
+
+  // Select all existing content
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+
+  // Insert new text (this replaces the selection and triggers tiptap's internal events)
+  document.execCommand("insertText", false, text);
+}
+
+// Fill the video prompt and click the Make video button
+// Supports both old UI (textarea) and new UI (tiptap contenteditable)
 function fillAndSubmitVideo(text: string): { success: boolean; error?: string } {
-  // Find the textarea
-  const textarea = document.querySelector<HTMLTextAreaElement>(
-    'textarea[aria-label="Make a video"]'
+  // Try new UI first: contenteditable div with tiptap ProseMirror
+  const contentEditable = document.querySelector<HTMLDivElement>(
+    'div.tiptap.ProseMirror[contenteditable="true"]'
   );
 
-  if (!textarea) {
-    return { success: false, error: "Could not find video prompt textarea" };
+  if (contentEditable) {
+    setTiptapContent(contentEditable, text);
+  } else {
+    // Fallback to old UI: textarea
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Make a video"]'
+    );
+
+    if (!textarea) {
+      return { success: false, error: "Could not find video prompt input" };
+    }
+
+    setReactInputValue(textarea, text);
   }
 
-  // Set the value using React-compatible method
-  setReactInputValue(textarea, text);
-
-  // Find and click the Make video button
+  // Find and click the Make video button (same aria-label in both UIs)
   const makeVideoBtn = document.querySelector<HTMLButtonElement>(
     'button[aria-label="Make video"]'
   );
@@ -303,12 +328,16 @@ function findMenuItemByText(text: string): Element | null {
 }
 
 // Click a video option (duration, resolution, or mood)
+// Supports both old UI (Video Options button) and new UI (Settings button)
 async function clickVideoOption(option: string): Promise<{ success: boolean; error?: string }> {
-  // Find the Video Options button
-  const videoOptionsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Video Options"]');
+  // Find the Video Options button (old UI) or Settings button (new UI)
+  let videoOptionsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Video Options"]');
+  if (!videoOptionsBtn) {
+    videoOptionsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]');
+  }
 
   if (!videoOptionsBtn) {
-    return { success: false, error: "Video Options button not found" };
+    return { success: false, error: "Video Options/Settings button not found" };
   }
 
   // Check if menu is already open (aria-expanded="true" when open, absent or "false" when closed)
