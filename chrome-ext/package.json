@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "tsx watch scripts/build.ts",
     "build": "tsx scripts/build.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
     "@types/node": "^25.0.6",
     "esbuild": "^0.24.2",
+    "jsdom": "^28.1.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.18"
   }
 }
