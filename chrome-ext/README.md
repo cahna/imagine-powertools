@@ -41,6 +41,15 @@ When viewing a generated image (`/imagine/post/...`), the extension popup shows:
 - History of previously submitted prompts for that image
 - Ability to restore or delete history entries
 
+### Autosubmit
+
+When a video generation is moderated (blocked), the autosubmit feature can automatically retry:
+
+- Resubmits the most recent prompt from history
+- Configurable retry count (default: up to N retries)
+- Stops on success, rate limit, or max retries reached
+- Shows progress in the popup UI
+
 ### Data Import/Export
 
 The popup's "Data" tab allows you to:
@@ -86,6 +95,8 @@ Chrome limits extensions to 4 default keyboard shortcuts. To enable the Video Op
 - `npm run build` - Build the extension to `dist/`
 - `npm run dev` - Build in watch mode with source maps
 - `npm run typecheck` - Run TypeScript type checking
+- `npm test` - Run tests
+- `npm run test:watch` - Run tests in watch mode
 
 ### Project Structure
 
@@ -94,6 +105,8 @@ src/
 ├── manifest.json      # Extension manifest (Manifest V3)
 ├── background.ts      # Service worker for handling commands + storage cache
 ├── content.ts         # Content script injected into grok.com/imagine
+├── content.core.ts    # Testable functions extracted from content.ts
+├── content.test.ts    # Behavioral tests
 ├── shared/
 │   ├── db.ts          # IndexedDB storage layer
 │   └── storage.ts     # High-level storage API
@@ -101,10 +114,12 @@ src/
 │   ├── popup.html     # Popup UI
 │   ├── popup.ts       # Popup logic
 │   └── popup.css      # Popup styles
-└── data/
-    ├── data.html      # Data Manager page
-    ├── data.ts        # Data Manager logic
-    └── data.css       # Data Manager styles
+├── data/
+│   ├── data.html      # Data Manager page
+│   ├── data.ts        # Data Manager logic
+│   └── data.css       # Data Manager styles
+└── test/
+    └── setup.ts       # Test setup (Chrome API mocks)
 ```
 
 ### Storage

@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` - Production build to `dist/`
 - `npm run dev` - Watch mode with inline source maps
 - `npm run typecheck` - TypeScript type checking
+- `npm test` - Run tests once
+- `npm run test:watch` - Run tests in watch mode
 
 After building, load the `dist/` folder as an unpacked extension in `chrome://extensions` (Developer mode).
 
@@ -43,6 +45,12 @@ Chrome Manifest V3 extension for adding power-user features to Grok Imagine (gro
 - Video option clicking via radiogroup buttons or Settings dropdown menu
 - History interception via `pushState`/`replaceState` patching for SPA navigation
 - Alt+Shift+Click handler to open images in new tabs
+- Autosubmit feature with retry logic for moderated results
+
+**content.core.ts** - Testable functions extracted from content.ts:
+
+- Exported for use by both content.ts and tests
+- `detectMode()`, `clickVideoOption()`, `fillAndSubmitVideo()`, `detectGenerationOutcome()`, etc.
 
 **popup/popup.ts** - Extension popup UI:
 
@@ -70,3 +78,14 @@ Chrome Manifest V3 extension for adding power-user features to Grok Imagine (gro
 - All TypeScript compiled to IIFE format (required for content/popup scripts)
 - Static files (manifest, HTML, CSS, icons) copied to dist
 - Watch mode keeps dist directory intact to preserve Chrome file handles
+
+### Testing
+
+Uses Vitest with jsdom for behavioral tests. Key files:
+
+- `vitest.config.ts` - Test configuration
+- `src/test/setup.ts` - Chrome API mocks
+- `src/content.test.ts` - Behavioral tests for content script functions
+- `src/content.core.ts` - Functions extracted from content.ts to enable testing
+
+Tests verify DOM interactions like clicking video options, filling prompts, and detecting page state. This catches bugs like accidentally removing helper functions that are still called.
