@@ -21,6 +21,17 @@ Chrome Manifest V3 extension for adding power-user features to Grok Imagine (gro
 - Tab mode tracking (Map of tabId -> Mode)
 - Message passing between popup/content scripts
 - Tab navigation commands
+- Storage proxy for content scripts (IndexedDB not accessible from content scripts)
+- LRU cache for hot-path storage reads
+
+**shared/db.ts** - IndexedDB storage layer:
+- Database: `ImaginePowerTools`, object store: `postHistory`
+- Per-record operations: `getEntries`, `setEntries`, `getAllRecords`, `bulkSetRecords`, `clearAll`
+
+**shared/storage.ts** - High-level storage API:
+- Same interface as before (`getPostHistory`, `saveToPostHistory`, etc.)
+- Backed by IndexedDB via db.ts
+- Handles `submitCount` increment logic for duplicate prompts
 
 **content.ts** - Injected into `grok.com/imagine*` pages:
 - Mode detection: `favorites`, `results`, `post`, or `none`
@@ -40,9 +51,11 @@ Chrome Manifest V3 extension for adding power-user features to Grok Imagine (gro
 
 **React Input Handling**: Uses native value setters + `input` event dispatch to work with React-controlled inputs (`setReactInputValue`). For tiptap editors, uses `execCommand('insertText')`.
 
-**Storage**: Prompt history stored in `chrome.storage.local` under key `postHistory`, keyed by source image UUID.
+**Storage**: Prompt history stored in IndexedDB (`ImaginePowerTools` database, `postHistory` object store), keyed by source image UUID. Each record contains `{ postId, entries: HistoryEntry[] }`. The background script maintains an LRU cache (100 entries) for fast reads during rapid tab cycling.
 
-**Message Types**: `modeChange`, `getMode`, `fillAndSubmit`, `submitFromClipboard`, `clickVideoOption`, `clickDownload`, `openTab`
+**Message Types**:
+- Content script: `modeChange`, `getMode`, `fillAndSubmit`, `submitFromClipboard`, `clickVideoOption`, `clickDownload`, `openTab`
+- Storage (content→background): `storage:getPostHistory`, `storage:saveToPostHistory`
 
 ### Build System
 

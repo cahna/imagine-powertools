@@ -1,4 +1,7 @@
-// Shared storage types and utilities for Grok Imagine Power Tools
+// Shared storage types and utilities for Imagine Power Tools
+// Now backed by IndexedDB for better performance with large datasets
+
+import * as db from "./db";
 
 export interface HistoryEntry {
   text: string;
@@ -10,52 +13,49 @@ export interface PostHistory {
   [postId: string]: HistoryEntry[];
 }
 
+// Legacy key - kept for reference but no longer used
 export const STORAGE_KEY = "postHistory";
 
 export async function getAllHistory(): Promise<PostHistory> {
-  const result = await chrome.storage.local.get(STORAGE_KEY);
-  return result[STORAGE_KEY] || {};
+  const records = await db.getAllRecords();
+  const history: PostHistory = {};
+  for (const [postId, entries] of records) {
+    history[postId] = entries;
+  }
+  return history;
 }
 
 export async function getPostHistory(postId: string): Promise<HistoryEntry[]> {
-  const history = await getAllHistory();
-  return history[postId] || [];
+  return db.getEntries(postId);
 }
 
 export async function saveToPostHistory(postId: string, text: string): Promise<void> {
-  const history = await getAllHistory();
-
-  if (!history[postId]) {
-    history[postId] = [];
-  }
+  const entries = await db.getEntries(postId);
 
   // Check if this exact text already exists
-  const existingIndex = history[postId].findIndex((entry) => entry.text === text);
+  const existingIndex = entries.findIndex((entry) => entry.text === text);
 
   if (existingIndex !== -1) {
     // Increment counter and update timestamp
-    const existing = history[postId][existingIndex];
+    const existing = entries[existingIndex];
     existing.submitCount = (existing.submitCount || 1) + 1;
     existing.timestamp = Date.now();
   } else {
     // Add new entry with submitCount: 1
-    history[postId].push({
+    entries.push({
       text,
       timestamp: Date.now(),
       submitCount: 1,
     });
   }
 
-  await chrome.storage.local.set({ [STORAGE_KEY]: history });
+  await db.setEntries(postId, entries);
 }
 
 export async function deleteFromPostHistory(postId: string, timestamp: number): Promise<void> {
-  const history = await getAllHistory();
-
-  if (history[postId]) {
-    history[postId] = history[postId].filter((entry) => entry.timestamp !== timestamp);
-    await chrome.storage.local.set({ [STORAGE_KEY]: history });
-  }
+  const entries = await db.getEntries(postId);
+  const filtered = entries.filter((entry) => entry.timestamp !== timestamp);
+  await db.setEntries(postId, filtered);
 }
 
 export function validatePostHistory(data: unknown): data is PostHistory {
@@ -110,4 +110,18 @@ export function mergeHistories(
   }
 
   return { merged, addedCount, skippedCount };
+}
+
+// Bulk import - writes all records to IndexedDB in a single transaction
+export async function bulkImportHistory(history: PostHistory): Promise<void> {
+  const records = new Map<string, HistoryEntry[]>();
+  for (const postId in history) {
+    records.set(postId, history[postId]);
+  }
+  await db.bulkSetRecords(records);
+}
+
+// Clear all history data
+export async function clearAllHistory(): Promise<void> {
+  await db.clearAll();
 }

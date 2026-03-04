@@ -266,23 +266,33 @@ function fillAndSubmitVideo(text: string): { success: boolean; error?: string } 
   return { success: true };
 }
 
-// Storage key for post history (must match popup and background)
-const STORAGE_KEY = "postHistory";
+// =============================================================================
+// Storage operations via message passing to background script
+// (IndexedDB is not accessible from content scripts)
+// =============================================================================
 
 interface HistoryEntry {
   text: string;
   timestamp: number;
+  submitCount?: number;
 }
 
-interface PostHistory {
-  [postId: string]: HistoryEntry[];
-}
-
-// Get history for a specific post
-async function getPostHistory(postId: string): Promise<HistoryEntry[]> {
-  const result = await chrome.storage.local.get(STORAGE_KEY);
-  const history: PostHistory = result[STORAGE_KEY] || {};
-  return history[postId] || [];
+// Save to post history via background script
+async function saveToPostHistory(postId: string, text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: "storage:saveToPostHistory", postId, text },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else if (response?.success) {
+          resolve();
+        } else {
+          reject(new Error(response?.error || "Unknown error"));
+        }
+      }
+    );
+  });
 }
 
 // Wait for an element to appear in the DOM
@@ -316,6 +326,62 @@ function waitForElement(selector: string, timeout = 2000): Promise<Element | nul
   });
 }
 
+// Click a video option (duration, resolution, or mood)
+// Handles collapsed form state by expanding it first for duration/resolution
+async function clickVideoOption(option: string): Promise<{ success: boolean; error?: string }> {
+  // Duration and resolution options use radiogroups
+  if (["6s", "10s", "480p", "720p"].includes(option)) {
+    const isResolution = ["480p", "720p"].includes(option);
+    const radioGroupLabel = isResolution ? "Video resolution" : "Video duration";
+
+    // Check if radiogroup is already visible
+    let radioGroup = document.querySelector(`[role="radiogroup"][aria-label="${radioGroupLabel}"]`);
+
+    // If not visible, form is collapsed - click the text input to expand it
+    if (!radioGroup) {
+      const tiptapEditor = document.querySelector<HTMLElement>(
+        'div.tiptap.ProseMirror[contenteditable="true"]'
+      );
+
+      if (!tiptapEditor) {
+        return { success: false, error: "Could not find text input to expand form" };
+      }
+
+      // Focus the editor to trigger form expansion
+      tiptapEditor.focus();
+
+      // Wait for radiogroup to appear (form expansion animation)
+      const appeared = await waitForElement(`[role="radiogroup"][aria-label="${radioGroupLabel}"]`, 1000);
+      if (!appeared) {
+        return { success: false, error: "Form did not expand - radiogroup not found" };
+      }
+
+      radioGroup = appeared;
+    }
+
+    // Find the radio button by checking for the option text in nested spans
+    const buttons = radioGroup.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
+    for (const btn of buttons) {
+      const spans = btn.querySelectorAll("span");
+      for (const span of spans) {
+        if (span.textContent?.trim() === option) {
+          btn.click();
+          return { success: true };
+        }
+      }
+    }
+
+    return { success: false, error: `Option "${option}" not found in radiogroup` };
+  }
+
+  // Mood options require opening the Settings menu
+  if (["spicy", "fun", "normal"].includes(option)) {
+    return await clickMoodOptionFromMenu(option);
+  }
+
+  return { success: false, error: `Unknown option: ${option}` };
+}
+
 // Find a menu item by its text content
 function findMenuItemByText(text: string): Element | null {
   const menuItems = document.querySelectorAll('div[role="menuitem"][data-radix-collection-item]');
@@ -327,145 +393,62 @@ function findMenuItemByText(text: string): Element | null {
   return null;
 }
 
-// Click a video option (duration, resolution, or mood)
-// Supports multiple UI versions:
-// - Latest UI: radiogroup buttons directly in the input bar
-// - Old UI: Video Options/Settings dropdown menu
-async function clickVideoOption(option: string): Promise<{ success: boolean; error?: string }> {
-  // Duration and resolution options
-  if (["6s", "10s", "480p", "720p"].includes(option)) {
-    // Try new UI first: radiogroup buttons directly visible in the input bar
-    const isResolution = ["480p", "720p"].includes(option);
-    const radioGroupLabel = isResolution ? "Video resolution" : "Video duration";
-    const radioGroup = document.querySelector(`div[aria-label="${radioGroupLabel}"]`);
+// Click a mood option from the Settings dropdown menu
+async function clickMoodOptionFromMenu(option: string): Promise<{ success: boolean; error?: string }> {
+  const settingsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]');
 
-    if (radioGroup) {
-      // Find the radio button by its text content
-      const buttons = radioGroup.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
-      for (const btn of buttons) {
-        if (btn.textContent?.trim() === option) {
-          btn.click();
-          return { success: true };
-        }
-      }
-      return { success: false, error: `Option "${option}" not found in radiogroup` };
-    }
-
-    // Fallback: try old UI with aria-label buttons (may be in a dropdown)
-    const ariaLabelBtn = document.querySelector<HTMLButtonElement>(`button[aria-label="${option}"]`);
-    if (ariaLabelBtn) {
-      ariaLabelBtn.click();
-      return { success: true };
-    }
-
-    // Fallback: try opening Settings/Video Options dropdown menu
-    return await clickVideoOptionFromMenu(option);
+  if (!settingsBtn) {
+    return { success: false, error: "Settings button not found" };
   }
 
-  // Mood options are always in menu
-  if (["spicy", "fun", "normal"].includes(option)) {
-    return await clickVideoOptionFromMenu(option);
-  }
+  // Check if menu is already open
+  const isOpen = settingsBtn.getAttribute("aria-expanded") === "true";
 
-  return { success: false, error: `Unknown option: ${option}` };
-}
-
-// Helper: click video option from dropdown menu (old UI fallback)
-async function clickVideoOptionFromMenu(option: string): Promise<{ success: boolean; error?: string }> {
-  // Find the Video Options button (old UI) or Settings button (new UI)
-  let videoOptionsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Video Options"]');
-  if (!videoOptionsBtn) {
-    videoOptionsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]');
-  }
-
-  if (!videoOptionsBtn) {
-    return { success: false, error: "Video Options/Settings button not found" };
-  }
-
-  // Check if menu is already open (aria-expanded="true" when open, absent or "false" when closed)
-  const isOpen = videoOptionsBtn.getAttribute("aria-expanded") === "true";
-
-  // If menu is closed, open it
   if (!isOpen) {
-    videoOptionsBtn.focus();
+    settingsBtn.focus();
 
-    // Try pointer events (Radix UI uses these)
-    const pointerDownEvent = new PointerEvent("pointerdown", {
+    // Dispatch pointer events (Radix UI uses these)
+    settingsBtn.dispatchEvent(new PointerEvent("pointerdown", {
       bubbles: true,
       cancelable: true,
       view: window,
       pointerType: "mouse",
-    });
-    const pointerUpEvent = new PointerEvent("pointerup", {
+    }));
+    settingsBtn.dispatchEvent(new PointerEvent("pointerup", {
       bubbles: true,
       cancelable: true,
       view: window,
       pointerType: "mouse",
-    });
-    const clickEvent = new MouseEvent("click", {
+    }));
+    settingsBtn.dispatchEvent(new MouseEvent("click", {
       bubbles: true,
       cancelable: true,
       view: window,
-    });
+    }));
 
-    videoOptionsBtn.dispatchEvent(pointerDownEvent);
-    videoOptionsBtn.dispatchEvent(pointerUpEvent);
-    videoOptionsBtn.dispatchEvent(clickEvent);
-
-    // Wait for menu content to appear (Radix menus use portals)
-    const menuContent = await waitForElement('[data-radix-menu-content]', 2000);
+    // Wait for menu to appear
+    const menuContent = await waitForElement('[data-radix-menu-content]', 1000);
     if (!menuContent) {
-      // Try alternative selector
-      const altMenu = document.querySelector('[role="menu"][data-state="open"]');
-      if (!altMenu) {
-        return { success: false, error: "Menu did not open" };
-      }
+      return { success: false, error: "Settings menu did not open" };
     }
 
     // Small delay for menu animation
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
-  // Find and click the target element based on option type
-  let targetElement: Element | null = null;
-
-  // Duration and resolution buttons use aria-label
-  if (["6s", "10s", "480p", "720p"].includes(option)) {
-    targetElement = document.querySelector(`button[aria-label="${option}"]`);
-  }
-  // Mood options are menu items with text content
-  else if (["spicy", "fun", "normal"].includes(option)) {
-    // Capitalize first letter for matching (e.g., "spicy" -> "Spicy")
-    const moodText = option.charAt(0).toUpperCase() + option.slice(1);
-    targetElement = findMenuItemByText(moodText);
-  }
+  // Capitalize first letter for matching (e.g., "spicy" -> "Spicy")
+  const moodText = option.charAt(0).toUpperCase() + option.slice(1);
+  const targetElement = findMenuItemByText(moodText);
 
   if (!targetElement) {
-    return { success: false, error: `Option "${option}" not found in menu` };
+    return { success: false, error: `Mood option "${option}" not found in menu` };
   }
 
-  // Click the target element
   (targetElement as HTMLElement).click();
-
   return { success: true };
 }
 
-// Save an entry to post history
-async function saveToPostHistory(postId: string, text: string): Promise<void> {
-  const result = await chrome.storage.local.get(STORAGE_KEY);
-  const history: PostHistory = result[STORAGE_KEY] || {};
 
-  if (!history[postId]) {
-    history[postId] = [];
-  }
-
-  history[postId].push({
-    text,
-    timestamp: Date.now(),
-  });
-
-  await chrome.storage.local.set({ [STORAGE_KEY]: history });
-}
 
 // Listen for messages from popup or background
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

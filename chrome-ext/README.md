@@ -83,13 +83,24 @@ Chrome limits extensions to 4 default keyboard shortcuts. To enable the Video Op
 ```
 src/
 ├── manifest.json      # Extension manifest (Manifest V3)
-├── background.ts      # Service worker for handling commands
+├── background.ts      # Service worker for handling commands + storage cache
 ├── content.ts         # Content script injected into grok.com/imagine
-└── popup/
-    ├── popup.html     # Popup UI
-    ├── popup.ts       # Popup logic
-    └── popup.css      # Popup styles
+├── shared/
+│   ├── db.ts          # IndexedDB storage layer
+│   └── storage.ts     # High-level storage API
+├── popup/
+│   ├── popup.html     # Popup UI
+│   ├── popup.ts       # Popup logic
+│   └── popup.css      # Popup styles
+└── data/
+    ├── data.html      # Data Manager page
+    ├── data.ts        # Data Manager logic
+    └── data.css       # Data Manager styles
 ```
+
+### Storage
+
+Prompt history is stored in IndexedDB (`ImaginePowerTools` database) for better performance with large datasets. The background script maintains an LRU cache for frequently accessed entries. Data can be exported/imported as JSON via the Data Manager.
 
 ## Usage Notes
 

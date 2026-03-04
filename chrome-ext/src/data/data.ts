@@ -1,12 +1,13 @@
-// Data management page for Grok Imagine Power Tools
+// Data management page for Imagine Power Tools
 
 import {
   PostHistory,
   HistoryEntry,
-  STORAGE_KEY,
   getAllHistory,
   validatePostHistory,
   mergeHistories,
+  bulkImportHistory,
+  clearAllHistory,
 } from "../shared/storage";
 
 // State
@@ -315,7 +316,7 @@ async function saveModal(): Promise<void> {
     }
   }
 
-  await chrome.storage.local.set({ [STORAGE_KEY]: currentHistory });
+  await bulkImportHistory(currentHistory);
 
   closeModal();
   renderPromptsList();
@@ -340,7 +341,7 @@ async function deletePrompt(timestamp: number): Promise<void> {
     selectedSourceId = null;
   }
 
-  await chrome.storage.local.set({ [STORAGE_KEY]: currentHistory });
+  await bulkImportHistory(currentHistory);
 
   renderPromptsList();
   renderSourcesList();
@@ -362,7 +363,7 @@ async function deleteSource(): Promise<void> {
   delete currentHistory[selectedSourceId];
   selectedSourceId = null;
 
-  await chrome.storage.local.set({ [STORAGE_KEY]: currentHistory });
+  await bulkImportHistory(currentHistory);
 
   renderPromptsList();
   renderSourcesList();
@@ -472,7 +473,7 @@ async function init(): Promise<void> {
         parsed
       );
 
-      await chrome.storage.local.set({ [STORAGE_KEY]: merged });
+      await bulkImportHistory(merged);
       currentHistory = merged;
 
       showStatus(
@@ -515,7 +516,7 @@ async function init(): Promise<void> {
         parsed
       );
 
-      await chrome.storage.local.set({ [STORAGE_KEY]: merged });
+      await bulkImportHistory(merged);
       currentHistory = merged;
 
       showStatus(
@@ -545,7 +546,7 @@ async function init(): Promise<void> {
       return;
     }
 
-    await chrome.storage.local.remove(STORAGE_KEY);
+    await clearAllHistory();
     currentHistory = {};
     selectedSourceId = null;
 

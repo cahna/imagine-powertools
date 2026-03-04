@@ -1,6 +1,10 @@
-// Background service worker for Grok Imagine Power Tools
+// Background service worker for Imagine Power Tools
 
-import { HistoryEntry, PostHistory, STORAGE_KEY, saveToPostHistory } from "./shared/storage";
+import {
+  HistoryEntry,
+  getPostHistory,
+  saveToPostHistory,
+} from "./shared/storage";
 
 type Mode = "favorites" | "results" | "post" | "none";
 
@@ -21,12 +25,80 @@ const VIDEO_COMMANDS: Record<string, VideoOption> = {
 // Store mode per tab
 const tabModes = new Map<number, Mode>();
 
-// Get the most recent history entry for a post
+// =============================================================================
+// LRU Cache for hot-path storage reads
+// =============================================================================
+
+const CACHE_MAX_SIZE = 100;
+
+interface CacheEntry {
+  entries: HistoryEntry[];
+  accessTime: number;
+}
+
+const historyCache = new Map<string, CacheEntry>();
+
+function cacheGet(postId: string): HistoryEntry[] | null {
+  const entry = historyCache.get(postId);
+  if (entry) {
+    entry.accessTime = Date.now();
+    return entry.entries;
+  }
+  return null;
+}
+
+function cacheSet(postId: string, entries: HistoryEntry[]): void {
+  // Evict oldest entries if cache is full
+  if (historyCache.size >= CACHE_MAX_SIZE) {
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+    for (const [key, entry] of historyCache) {
+      if (entry.accessTime < oldestTime) {
+        oldestTime = entry.accessTime;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) {
+      historyCache.delete(oldestKey);
+    }
+  }
+
+  historyCache.set(postId, {
+    entries,
+    accessTime: Date.now(),
+  });
+}
+
+function cacheInvalidate(postId: string): void {
+  historyCache.delete(postId);
+}
+
+// =============================================================================
+// Cached storage operations
+// =============================================================================
+
+// Get post history with caching
+async function getCachedPostHistory(postId: string): Promise<HistoryEntry[]> {
+  const cached = cacheGet(postId);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const entries = await getPostHistory(postId);
+  cacheSet(postId, entries);
+  return entries;
+}
+
+// Save to post history and invalidate cache
+async function cachedSaveToPostHistory(postId: string, text: string): Promise<void> {
+  await saveToPostHistory(postId, text);
+  cacheInvalidate(postId);
+}
+
+// Get the most recent history entry for a post (cached)
 async function getMostRecentHistoryEntry(postId: string): Promise<HistoryEntry | null> {
   try {
-    const result = await chrome.storage.local.get(STORAGE_KEY);
-    const history: PostHistory = result[STORAGE_KEY] || {};
-    const entries = history[postId];
+    const entries = await getCachedPostHistory(postId);
 
     if (!entries || entries.length === 0) {
       return null;
@@ -36,19 +108,27 @@ async function getMostRecentHistoryEntry(postId: string): Promise<HistoryEntry |
     const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
     return sorted[0];
   } catch (error) {
-    console.error("[Grok Imagine Power Tools] Failed to get history:", error);
+    console.error("[Imagine Power Tools] Failed to get history:", error);
     return null;
   }
 }
 
+// =============================================================================
+// Extension lifecycle
+// =============================================================================
+
 // Listen for extension installation
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
-    console.log("[Grok Imagine Power Tools] Extension installed");
+    console.log("[Imagine Power Tools] Extension installed");
   } else if (details.reason === "update") {
-    console.log("[Grok Imagine Power Tools] Extension updated");
+    console.log("[Imagine Power Tools] Extension updated");
   }
 });
+
+// =============================================================================
+// Message handling
+// =============================================================================
 
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -59,7 +139,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const previousMode = tabModes.get(tabId);
         tabModes.set(tabId, message.mode);
         console.log(
-          `[Grok Imagine Power Tools] Tab ${tabId} mode: ${previousMode ?? "unknown"} -> ${message.mode}`
+          `[Imagine Power Tools] Tab ${tabId} mode: ${previousMode ?? "unknown"} -> ${message.mode}`
         );
       }
       sendResponse({ status: "ok" });
@@ -78,6 +158,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
+    // Storage operations for content script (IndexedDB not accessible from content scripts)
+    case "storage:getPostHistory": {
+      (async () => {
+        try {
+          const entries = await getCachedPostHistory(message.postId);
+          sendResponse({ success: true, entries });
+        } catch (error) {
+          console.error("[Imagine Power Tools] storage:getPostHistory failed:", error);
+          sendResponse({ success: false, error: String(error) });
+        }
+      })();
+      return true; // Keep channel open for async response
+    }
+
+    case "storage:saveToPostHistory": {
+      (async () => {
+        try {
+          await cachedSaveToPostHistory(message.postId, message.text);
+          sendResponse({ success: true });
+        } catch (error) {
+          console.error("[Imagine Power Tools] storage:saveToPostHistory failed:", error);
+          sendResponse({ success: false, error: String(error) });
+        }
+      })();
+      return true; // Keep channel open for async response
+    }
+
     default:
       sendResponse({ status: "unknown message type" });
   }
@@ -89,9 +196,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabModes.has(tabId)) {
     tabModes.delete(tabId);
-    console.log(`[Grok Imagine Power Tools] Cleaned up mode for tab ${tabId}`);
+    console.log(`[Imagine Power Tools] Cleaned up mode for tab ${tabId}`);
   }
 });
+
+// =============================================================================
+// Tab navigation
+// =============================================================================
 
 // Handle tab navigation commands
 async function handleTabNavigation(direction: "left" | "right"): Promise<void> {
@@ -117,6 +228,10 @@ async function handleTabNavigation(direction: "left" | "right"): Promise<void> {
   }
 }
 
+// =============================================================================
+// Keyboard command handling
+// =============================================================================
+
 // Handle keyboard commands
 chrome.commands.onCommand.addListener(async (command) => {
   // Tab navigation commands
@@ -132,19 +247,19 @@ chrome.commands.onCommand.addListener(async (command) => {
   // Video option commands
   if (command in VIDEO_COMMANDS) {
     const option = VIDEO_COMMANDS[command];
-    console.log(`[Grok Imagine Power Tools] Video option command: ${option}`);
+    console.log(`[Imagine Power Tools] Video option command: ${option}`);
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
       if (!tab?.id) {
-        console.log("[Grok Imagine Power Tools] No active tab found");
+        console.log("[Imagine Power Tools] No active tab found");
         return;
       }
 
       const url = tab.url || "";
       if (!url.startsWith("https://grok.com/imagine")) {
-        console.log("[Grok Imagine Power Tools] Not on grok.com/imagine page");
+        console.log("[Imagine Power Tools] Not on grok.com/imagine page");
         return;
       }
 
@@ -156,32 +271,32 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Grok Imagine Power Tools] Click video option failed:", result.error);
+          console.error("[Imagine Power Tools] Click video option failed:", result.error);
         }
       } catch (error) {
-        console.error("[Grok Imagine Power Tools] Failed to send clickVideoOption:", error);
+        console.error("[Imagine Power Tools] Failed to send clickVideoOption:", error);
       }
     } catch (error) {
-      console.error("[Grok Imagine Power Tools] Video option command error:", error);
+      console.error("[Imagine Power Tools] Video option command error:", error);
     }
     return;
   }
 
   // Download video command
   if (command === "download-video") {
-    console.log("[Grok Imagine Power Tools] Download video command triggered");
+    console.log("[Imagine Power Tools] Download video command triggered");
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
       if (!tab?.id) {
-        console.log("[Grok Imagine Power Tools] No active tab found");
+        console.log("[Imagine Power Tools] No active tab found");
         return;
       }
 
       const url = tab.url || "";
       if (!url.startsWith("https://grok.com/imagine")) {
-        console.log("[Grok Imagine Power Tools] Not on grok.com/imagine page");
+        console.log("[Imagine Power Tools] Not on grok.com/imagine page");
         return;
       }
 
@@ -192,13 +307,13 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Grok Imagine Power Tools] Click download failed:", result.error);
+          console.error("[Imagine Power Tools] Click download failed:", result.error);
         }
       } catch (error) {
-        console.error("[Grok Imagine Power Tools] Failed to send clickDownload:", error);
+        console.error("[Imagine Power Tools] Failed to send clickDownload:", error);
       }
     } catch (error) {
-      console.error("[Grok Imagine Power Tools] Download command error:", error);
+      console.error("[Imagine Power Tools] Download command error:", error);
     }
     return;
   }
@@ -207,21 +322,21 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
-  console.log(`[Grok Imagine Power Tools] ${command} command triggered`);
+  console.log(`[Imagine Power Tools] ${command} command triggered`);
 
   try {
     // Get the active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id) {
-      console.log("[Grok Imagine Power Tools] No active tab found");
+      console.log("[Imagine Power Tools] No active tab found");
       return;
     }
 
     // Check if we're on a grok.com/imagine page
     const url = tab.url || "";
     if (!url.startsWith("https://grok.com/imagine")) {
-      console.log("[Grok Imagine Power Tools] Not on grok.com/imagine page");
+      console.log("[Imagine Power Tools] Not on grok.com/imagine page");
       return;
     }
 
@@ -230,24 +345,24 @@ chrome.commands.onCommand.addListener(async (command) => {
     try {
       modeResponse = await chrome.tabs.sendMessage(tab.id, { type: "getMode" });
     } catch (error) {
-      console.log("[Grok Imagine Power Tools] Content script not responding:", error);
+      console.log("[Imagine Power Tools] Content script not responding:", error);
       return;
     }
 
     if (!modeResponse) {
-      console.log("[Grok Imagine Power Tools] No response from content script");
+      console.log("[Imagine Power Tools] No response from content script");
       return;
     }
 
     const { mode, sourceImageId } = modeResponse;
 
     if (mode !== "post") {
-      console.log("[Grok Imagine Power Tools] Not in post mode, current mode:", mode);
+      console.log("[Imagine Power Tools] Not in post mode, current mode:", mode);
       return;
     }
 
     if (!sourceImageId) {
-      console.log("[Grok Imagine Power Tools] No source image ID available");
+      console.log("[Imagine Power Tools] No source image ID available");
       return;
     }
 
@@ -256,14 +371,14 @@ chrome.commands.onCommand.addListener(async (command) => {
       const entry = await getMostRecentHistoryEntry(sourceImageId);
 
       if (!entry) {
-        console.log("[Grok Imagine Power Tools] No history entries for source image:", sourceImageId);
+        console.log("[Imagine Power Tools] No history entries for source image:", sourceImageId);
         return;
       }
 
-      console.log("[Grok Imagine Power Tools] Re-submitting:", entry.text.substring(0, 50) + "...");
+      console.log("[Imagine Power Tools] Re-submitting:", entry.text.substring(0, 50) + "...");
 
-      // Update history (increments submitCount)
-      await saveToPostHistory(sourceImageId, entry.text);
+      // Update history (increments submitCount) and invalidate cache
+      await cachedSaveToPostHistory(sourceImageId, entry.text);
 
       // Send fillAndSubmit to the content script
       try {
@@ -273,10 +388,10 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Grok Imagine Power Tools] Fill and submit failed:", result.error);
+          console.error("[Imagine Power Tools] Fill and submit failed:", result.error);
         }
       } catch (error) {
-        console.error("[Grok Imagine Power Tools] Failed to send fillAndSubmit:", error);
+        console.error("[Imagine Power Tools] Failed to send fillAndSubmit:", error);
       }
     } else if (command === "submit-clipboard") {
       // Send submitFromClipboard to the content script
@@ -287,14 +402,14 @@ chrome.commands.onCommand.addListener(async (command) => {
         });
 
         if (result && !result.success) {
-          console.error("[Grok Imagine Power Tools] Submit from clipboard failed:", result.error);
+          console.error("[Imagine Power Tools] Submit from clipboard failed:", result.error);
         }
       } catch (error) {
-        console.error("[Grok Imagine Power Tools] Failed to send submitFromClipboard:", error);
+        console.error("[Imagine Power Tools] Failed to send submitFromClipboard:", error);
       }
     }
   } catch (error) {
-    console.error("[Grok Imagine Power Tools] Command handler error:", error);
+    console.error("[Imagine Power Tools] Command handler error:", error);
   }
 });
 
