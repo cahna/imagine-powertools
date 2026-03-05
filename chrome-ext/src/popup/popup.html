@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ImaginePowerTools</title>
+    <link rel="stylesheet" href="../shared/variables.css" />
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
@@ -85,6 +86,16 @@
         <button id="open-data-page" class="action-btn">
           Open Data Manager
         </button>
+
+        <!-- Theme toggle -->
+        <div class="theme-section">
+          <span class="theme-label">Theme:</span>
+          <select id="theme-select" class="theme-select">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
 
         <!-- Shortcuts Setup (shown on chrome://extensions/shortcuts) -->
         <div id="shortcuts-section" class="shortcuts-section hidden">

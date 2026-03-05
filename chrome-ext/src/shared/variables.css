@@ -1,0 +1,86 @@
+:root {
+  /* Backgrounds */
+  --bg-primary: #fff;
+  --bg-secondary: #f3f4f6;
+  --bg-tertiary: #f9fafb;
+
+  /* Text */
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --text-heading: #111827;
+
+  /* Borders */
+  --border-light: #e5e7eb;
+  --border-medium: #d1d5db;
+
+  /* Primary accent (blue) */
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-primary-active: #1d4ed8;
+  --accent-primary-bg: #eff6ff;
+  --accent-primary-text: #1d4ed8;
+
+  /* Success (green) */
+  --success: #10b981;
+  --success-hover: #059669;
+  --success-bg: #d1fae5;
+  --success-text: #065f46;
+  --success-border: #6ee7b7;
+
+  /* Error (red) */
+  --error: #ef4444;
+  --error-hover: #dc2626;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+  --error-border: #fca5a5;
+
+  /* Warning (amber) */
+  --warning-bg: #fef3c7;
+  --warning-text: #92400e;
+  --warning-border: #fcd34d;
+
+  /* Info (blue) */
+  --info-bg: #dbeafe;
+  --info-text: #1e40af;
+  --info-border: #bfdbfe;
+
+  /* Effects */
+  --shadow-color: rgba(0, 0, 0, 0.1);
+  --overlay-backdrop: rgba(0, 0, 0, 0.5);
+  --focus-ring: rgba(59, 130, 246, 0.2);
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  --bg-primary: #1f2937;
+  --bg-secondary: #111827;
+  --bg-tertiary: #374151;
+
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
+  --text-heading: #fff;
+
+  --border-light: #374151;
+  --border-medium: #4b5563;
+
+  /* Adjust accent colors for dark mode contrast */
+  --accent-primary-bg: #1e3a5f;
+  --accent-primary-text: #93c5fd;
+
+  --success-bg: #064e3b;
+  --success-text: #6ee7b7;
+
+  --error-bg: #7f1d1d;
+  --error-text: #fca5a5;
+
+  --warning-bg: #78350f;
+  --warning-text: #fcd34d;
+
+  --info-bg: #1e3a5f;
+  --info-text: #93c5fd;
+
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --overlay-backdrop: rgba(0, 0, 0, 0.7);
+}

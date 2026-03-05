@@ -13,6 +13,12 @@ import {
   AutosubmitMessageType,
   JobsMessageType,
 } from "../shared/messageTypes";
+import {
+  initTheme,
+  getThemePreference,
+  setThemePreference,
+  ThemePreference,
+} from "../shared/theme";
 
 type Mode = "favorites" | "results" | "post" | "none";
 
@@ -487,6 +493,20 @@ function setupShortcutsScriptHandler(): void {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  // Initialize theme
+  await initTheme();
+
+  // Setup theme toggle
+  const themeSelect = document.getElementById(
+    "theme-select",
+  ) as HTMLSelectElement | null;
+  if (themeSelect) {
+    themeSelect.value = await getThemePreference();
+    themeSelect.addEventListener("change", () => {
+      setThemePreference(themeSelect.value as ThemePreference);
+    });
+  }
+
   // Tab switching
   const tabButtons = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
   const tabContents = document.querySelectorAll<HTMLElement>(".tab-content");

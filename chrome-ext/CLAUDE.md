@@ -38,6 +38,17 @@ Chrome Manifest V3 extension for adding power-user features to Imagine (grok.com
 - Backed by IndexedDB via db.ts
 - Handles `submitCount` increment logic for duplicate prompts
 
+**shared/theme.ts** - Theme management:
+
+- `initTheme()`, `getThemePreference()`, `setThemePreference()`
+- Supports 'light', 'dark', or 'system' (follows OS preference)
+- Theme preference stored in `chrome.storage.local`
+
+**shared/variables.css** - CSS custom properties for theming:
+
+- Light theme in `:root`, dark theme in `[data-theme="dark"]`
+- Linked from both `popup.html` and `data.html`
+
 **content.ts** - Injected into `grok.com/imagine*` pages:
 
 - Mode detection: `favorites`, `results`, `post`, or `none`
@@ -96,6 +107,13 @@ Tests verify DOM interactions like clicking video options, filling prompts, and 
 - **Docstrings**: Add JSDoc-style docstrings (`/** ... */`) to all functions describing what they do. Focus on the "what" not the "how". No need to document parameters or return types (TypeScript handles that).
 
 - **Const Objects over Enums**: Prefer `as const` objects over TypeScript enums for better tree-shaking and runtime behavior.
+
+### CSS & Theming
+
+- **Use CSS Variables**: All colors should use variables from `shared/variables.css`. Never use hardcoded hex colors in CSS files.
+- **Variable naming**: `--bg-*` for backgrounds, `--text-*` for text, `--border-*` for borders, `--accent-*` for primary action colors, `--success/error/warning/info-*` for status colors.
+- **Dark mode**: Defined in `[data-theme="dark"]` selector in `variables.css`. Theme preference stored in `chrome.storage.local` via `shared/theme.ts`.
+- **Adding new colors**: Add to both `:root` (light) and `[data-theme="dark"]` blocks in `variables.css`.
 
 ### Adding New Message Types
 

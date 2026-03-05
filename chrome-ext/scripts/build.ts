@@ -32,6 +32,13 @@ function copyStaticFiles() {
   cpSync(join(srcDir, "data/data.html"), join(distDir, "data/data.html"));
   cpSync(join(srcDir, "data/data.css"), join(distDir, "data/data.css"));
 
+  // Copy shared CSS (variables for theming)
+  mkdirSync(join(distDir, "shared"), { recursive: true });
+  cpSync(
+    join(srcDir, "shared/variables.css"),
+    join(distDir, "shared/variables.css"),
+  );
+
   // Copy icons if they exist
   const iconsDir = join(srcDir, "icons");
   if (existsSync(iconsDir)) {
@@ -156,6 +163,7 @@ if (isWatch) {
     join(srcDir, "popup/popup.css"),
     join(srcDir, "data/data.html"),
     join(srcDir, "data/data.css"),
+    join(srcDir, "shared/variables.css"),
   ];
 
   for (const file of staticFiles) {

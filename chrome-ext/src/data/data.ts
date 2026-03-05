@@ -9,6 +9,7 @@ import {
   bulkImportHistory,
   clearAllHistory,
 } from "../shared/storage";
+import { initTheme } from "../shared/theme";
 
 // State
 let currentHistory: PostHistory = {};
@@ -389,6 +390,9 @@ function showStatus(message: string, isError: boolean): void {
 
 // Initialize
 async function init(): Promise<void> {
+  // Initialize theme
+  await initTheme();
+
   currentHistory = await getAllHistory();
   updateStats();
   renderSourcesList();
