@@ -30,6 +30,17 @@ type AutosubmitState =
       attempt: number;
     };
 
+interface JobInfo {
+  tabId: number;
+  tabTitle: string;
+  sourceImageId: string;
+  promptText: string;
+  maxRetries: number;
+  state: AutosubmitState;
+  startedAt: number;
+  updatedAt: number;
+}
+
 const PHASE_LABELS: Record<string, string> = {
   submitting: "Submitting...",
   generating: "Generating...",
@@ -118,6 +129,170 @@ function renderHistory(
     li.appendChild(contentDiv);
     li.appendChild(actionsDiv);
     listEl.appendChild(li);
+  }
+}
+
+// Format relative time (e.g., "2m ago")
+function formatRelativeTime(timestamp: number): string {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+// Get status badge text and class for a job
+function getJobStatusInfo(state: AutosubmitState): { text: string; className: string } {
+  if (state.status === "running") {
+    return {
+      text: `Running ${state.attempt}/${state.maxRetries}`,
+      className: "running",
+    };
+  }
+  if (state.status === "success") {
+    return {
+      text: `Success`,
+      className: "success",
+    };
+  }
+  if (state.status === "stopped") {
+    const reasonLabel = STOP_REASON_LABELS[state.reason] || state.reason;
+    const className = state.reason === "rate_limited" ? "error" : "stopped";
+    return {
+      text: reasonLabel,
+      className,
+    };
+  }
+  return { text: "Idle", className: "stopped" };
+}
+
+// Render jobs list
+function renderJobs(jobs: JobInfo[], container: HTMLElement, noJobsEl: HTMLElement): void {
+  container.innerHTML = "";
+
+  if (jobs.length === 0) {
+    noJobsEl.classList.remove("hidden");
+    return;
+  }
+
+  noJobsEl.classList.add("hidden");
+
+  // Sort by updatedAt descending (most recent first)
+  const sorted = [...jobs].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  for (const job of sorted) {
+    const item = document.createElement("div");
+    item.className = "job-item";
+    item.dataset.tabId = String(job.tabId);
+
+    const statusInfo = getJobStatusInfo(job.state);
+
+    // Header row: status badge + prompt preview
+    const header = document.createElement("div");
+    header.className = "job-header";
+
+    const statusBadge = document.createElement("span");
+    statusBadge.className = `job-status ${statusInfo.className}`;
+    statusBadge.textContent = statusInfo.text;
+
+    const promptPreview = document.createElement("span");
+    promptPreview.className = "job-prompt";
+    promptPreview.textContent = `"${job.promptText.substring(0, 30)}${job.promptText.length > 30 ? "..." : ""}"`;
+
+    header.appendChild(statusBadge);
+    header.appendChild(promptPreview);
+
+    // Details row: tab name + time
+    const details = document.createElement("div");
+    details.className = "job-details";
+
+    const tabName = document.createElement("span");
+    tabName.className = "job-tab-name";
+    tabName.textContent = job.tabTitle;
+
+    const timeInfo = document.createElement("span");
+    timeInfo.className = "job-time";
+    const isRunning = job.state.status === "running";
+    timeInfo.textContent = isRunning
+      ? `Started ${formatRelativeTime(job.startedAt)}`
+      : `Updated ${formatRelativeTime(job.updatedAt)}`;
+
+    details.appendChild(tabName);
+    details.appendChild(timeInfo);
+
+    // Actions row
+    const actions = document.createElement("div");
+    actions.className = "job-actions";
+
+    // Cancel button (only for running jobs)
+    if (job.state.status === "running") {
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "job-btn cancel";
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await chrome.tabs.sendMessage(job.tabId, { type: "autosubmit:cancel" });
+        } catch (err) {
+          logger.error("Failed to cancel job:", err);
+        }
+      });
+      actions.appendChild(cancelBtn);
+    }
+
+    // Restart button (only for stopped/success jobs)
+    if (job.state.status === "stopped" || job.state.status === "success") {
+      const restartBtn = document.createElement("button");
+      restartBtn.className = "job-btn restart";
+      restartBtn.textContent = "Restart";
+      restartBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try {
+          await chrome.tabs.sendMessage(job.tabId, {
+            type: "autosubmit:start",
+            maxRetries: job.maxRetries,
+          });
+        } catch (err) {
+          logger.error("Failed to restart job:", err);
+        }
+      });
+      actions.appendChild(restartBtn);
+    }
+
+    // Go to tab button
+    const gotoBtn = document.createElement("button");
+    gotoBtn.className = "job-btn goto";
+    gotoBtn.textContent = "Go to →";
+    gotoBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await chrome.tabs.update(job.tabId, { active: true });
+        window.close();
+      } catch (err) {
+        logger.error("Failed to switch to tab:", err);
+      }
+    });
+    actions.appendChild(gotoBtn);
+
+    item.appendChild(header);
+    item.appendChild(details);
+    item.appendChild(actions);
+    container.appendChild(item);
+  }
+}
+
+// Load and render jobs
+async function loadJobs(container: HTMLElement, noJobsEl: HTMLElement): Promise<void> {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "jobs:getAll" });
+    if (response?.success && response.jobs) {
+      renderJobs(response.jobs, container, noJobsEl);
+    }
+  } catch (err) {
+    logger.error("Failed to load jobs:", err);
   }
 }
 
@@ -292,6 +467,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const tabButtons = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
   const tabContents = document.querySelectorAll<HTMLElement>(".tab-content");
 
+  // Jobs tab elements
+  const jobsList = document.getElementById("jobs-list");
+  const noJobsEl = document.getElementById("no-jobs");
+
   tabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
       const targetTab = btn.dataset.tab;
@@ -303,8 +482,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       tabContents.forEach((content) => {
         content.classList.toggle("active", content.id === `tab-${targetTab}`);
       });
+
+      // Load jobs when Jobs tab is clicked
+      if (targetTab === "jobs" && jobsList && noJobsEl) {
+        loadJobs(jobsList, noJobsEl);
+      }
     });
   });
+
+  // Listen for autosubmit status updates to refresh jobs list
+  if (jobsList && noJobsEl) {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.type === "autosubmit:status") {
+        // Check if Jobs tab is currently active
+        const jobsTab = document.getElementById("tab-jobs");
+        if (jobsTab?.classList.contains("active")) {
+          loadJobs(jobsList, noJobsEl);
+        }
+      }
+    });
+  }
 
   // Open Data Manager button
   const openDataPageBtn = document.getElementById("open-data-page");
@@ -504,10 +701,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       // Listen for autosubmit status updates from content script
-      chrome.runtime.onMessage.addListener((message) => {
+      chrome.runtime.onMessage.addListener((message, sender) => {
         if (message.type === "autosubmit:status" && message.state) {
-          logger.log("Received autosubmit:status:", message.state);
-          updateAutosubmitUI(message.state);
+          // Only process if from the tab we're viewing
+          if (sender.tab?.id === tab?.id) {
+            logger.log("Received autosubmit:status:", message.state);
+            updateAutosubmitUI(message.state);
+          }
         }
       });
 

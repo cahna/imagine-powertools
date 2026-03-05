@@ -525,3 +525,136 @@ h1 {
 .cancel-btn:hover {
   background: #dc2626;
 }
+
+/* Jobs Tab */
+.jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.empty-state {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  font-style: italic;
+  padding: 24px 0;
+}
+
+.job-item {
+  padding: 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.job-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.job-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.job-status.running {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.job-status.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.job-status.stopped {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.job-status.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.job-prompt {
+  flex: 1;
+  font-size: 12px;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.job-details {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+.job-tab-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-time {
+  display: block;
+  margin-top: 2px;
+}
+
+.job-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.job-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.job-btn.goto {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.job-btn.goto:hover {
+  background: #d1d5db;
+}
+
+.job-btn.cancel {
+  background: #ef4444;
+  color: white;
+}
+
+.job-btn.cancel:hover {
+  background: #dc2626;
+}
+
+.job-btn.restart {
+  background: #10b981;
+  color: white;
+}
+
+.job-btn.restart:hover {
+  background: #059669;
+}

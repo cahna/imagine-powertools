@@ -71,6 +71,37 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
   autosubmitAbortController = new AbortController();
   const signal = autosubmitAbortController.signal;
 
+  // Get prompt text for job registration
+  const sourceImageIdForJob = getSourceImageId();
+  if (sourceImageIdForJob) {
+    // Get most recent prompt text
+    const historyForJob = await new Promise<{
+      success: boolean;
+      entries?: HistoryEntry[];
+    }>((resolve) => {
+      chrome.runtime.sendMessage(
+        { type: "storage:getPostHistory", postId: sourceImageIdForJob },
+        (response) => resolve(response || { success: false })
+      );
+    });
+
+    const sortedForJob = historyForJob.entries?.sort(
+      (a, b) => b.timestamp - a.timestamp
+    );
+    const promptText = sortedForJob?.[0]?.text || "";
+
+    // Register job with background script
+    chrome.runtime.sendMessage({
+      type: "jobs:register",
+      tabTitle: document.title,
+      sourceImageId: sourceImageIdForJob,
+      promptText,
+      maxRetries,
+    }).catch(() => {
+      // Background script may be unavailable, ignore
+    });
+  }
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     if (signal.aborted) {
       logger.log("Autosubmit aborted");
@@ -138,6 +169,9 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
       break;
     }
 
+    // Increment submission counter
+    await saveToPostHistory(sourceImageId, mostRecent.text);
+
     // Update state: generating
     autosubmitState = {
       status: "running",
@@ -191,10 +225,17 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
     if (signal.aborted) break;
 
     if (!outcome) {
-      logger.log("Timeout waiting for outcome");
-      autosubmitState = { status: "stopped", reason: "timeout", attempt };
-      broadcastAutosubmitStatus();
-      break;
+      // Timeout - treat like moderated, retry if attempts remain
+      if (attempt < maxRetries) {
+        logger.log(`Timeout on attempt ${attempt}, retrying...`);
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      } else {
+        logger.log("Timeout, max retries reached");
+        autosubmitState = { status: "stopped", reason: "timeout", attempt };
+        broadcastAutosubmitStatus();
+        break;
+      }
     }
 
     logger.log(`Outcome: ${outcome.type}`);

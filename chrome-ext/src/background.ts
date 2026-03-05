@@ -9,6 +9,34 @@ import { logger } from "./shared/logger";
 
 type Mode = "favorites" | "results" | "post" | "none";
 
+// Autosubmit state type (matches content.ts)
+type AutosubmitState =
+  | { status: "idle" }
+  | {
+      status: "running";
+      attempt: number;
+      maxRetries: number;
+      phase: "submitting" | "generating" | "waiting";
+    }
+  | { status: "success"; attempt: number }
+  | {
+      status: "stopped";
+      reason: "cancelled" | "rate_limited" | "max_retries" | "timeout" | "navigated";
+      attempt: number;
+    };
+
+// Job info for the Jobs tab
+interface JobInfo {
+  tabId: number;
+  tabTitle: string;
+  sourceImageId: string;
+  promptText: string;
+  maxRetries: number;
+  state: AutosubmitState;
+  startedAt: number;
+  updatedAt: number;
+}
+
 // Video option types
 type VideoOption = "6s" | "10s" | "480p" | "720p" | "spicy" | "fun" | "normal";
 
@@ -25,6 +53,12 @@ const VIDEO_COMMANDS: Record<string, VideoOption> = {
 
 // Store mode per tab
 const tabModes = new Map<number, Mode>();
+
+// =============================================================================
+// Job Registry for tracking autosubmit jobs across tabs
+// =============================================================================
+
+const activeJobs = new Map<number, JobInfo>();
 
 // =============================================================================
 // LRU Cache for hot-path storage reads
@@ -186,6 +220,57 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep channel open for async response
     }
 
+    // Job registry operations for the Jobs tab
+    case "jobs:register": {
+      const tabId = sender.tab?.id;
+      if (tabId !== undefined) {
+        const now = Date.now();
+        const job: JobInfo = {
+          tabId,
+          tabTitle: message.tabTitle || sender.tab?.title || "Unknown",
+          sourceImageId: message.sourceImageId,
+          promptText: message.promptText,
+          maxRetries: message.maxRetries,
+          state: { status: "running", attempt: 1, maxRetries: message.maxRetries, phase: "submitting" },
+          startedAt: now,
+          updatedAt: now,
+        };
+        activeJobs.set(tabId, job);
+        logger.log(`Job registered for tab ${tabId}:`, job.promptText.substring(0, 50));
+      }
+      sendResponse({ success: true });
+      break;
+    }
+
+    case "jobs:getAll": {
+      const jobs = Array.from(activeJobs.values());
+      sendResponse({ success: true, jobs });
+      break;
+    }
+
+    case "jobs:remove": {
+      const tabId = message.tabId;
+      if (tabId !== undefined && activeJobs.has(tabId)) {
+        activeJobs.delete(tabId);
+        logger.log(`Job removed for tab ${tabId}`);
+      }
+      sendResponse({ success: true });
+      break;
+    }
+
+    case "autosubmit:status": {
+      // Update job state when content script reports status
+      const tabId = sender.tab?.id;
+      if (tabId !== undefined && activeJobs.has(tabId)) {
+        const job = activeJobs.get(tabId)!;
+        job.state = message.state;
+        job.updatedAt = Date.now();
+        logger.log(`Job updated for tab ${tabId}:`, message.state.status);
+      }
+      sendResponse({ success: true });
+      break;
+    }
+
     default:
       sendResponse({ status: "unknown message type" });
   }
@@ -198,6 +283,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabModes.has(tabId)) {
     tabModes.delete(tabId);
     logger.log(`Cleaned up mode for tab ${tabId}`);
+  }
+  if (activeJobs.has(tabId)) {
+    activeJobs.delete(tabId);
+    logger.log(`Cleaned up job for tab ${tabId}`);
   }
 });
 
