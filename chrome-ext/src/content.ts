@@ -11,6 +11,13 @@ import {
   waitForOutcome,
 } from "./content.core";
 import { logger } from "./shared/logger";
+import {
+  ContentMessageType,
+  StorageMessageType,
+  PromptMessageType,
+  AutosubmitMessageType,
+  JobsMessageType,
+} from "./shared/messageTypes";
 
 export type { Mode };
 
@@ -47,11 +54,11 @@ const ATTEMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per attempt
 const RETRY_DELAY_MS = 1000; // 1 second delay before retry
 const GENERATION_START_TIMEOUT_MS = 10000; // 10 seconds to wait for generation to start
 
-// Broadcast autosubmit status to popup (if open)
+/** Broadcasts current autosubmit state to popup (if open) via runtime messaging. */
 function broadcastAutosubmitStatus(): void {
   chrome.runtime
     .sendMessage({
-      type: "autosubmit:status",
+      type: AutosubmitMessageType.STATUS,
       state: autosubmitState,
     })
     .catch(() => {
@@ -59,7 +66,7 @@ function broadcastAutosubmitStatus(): void {
     });
 }
 
-// Main autosubmit loop
+/** Runs the autosubmit loop, retrying submissions until success or max retries reached. */
 async function runAutosubmit(maxRetries: number): Promise<void> {
   if (autosubmitState.status === "running") {
     logger.log("Autosubmit already running, ignoring");
@@ -80,7 +87,10 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
       entries?: HistoryEntry[];
     }>((resolve) => {
       chrome.runtime.sendMessage(
-        { type: "storage:getPostHistory", postId: sourceImageIdForJob },
+        {
+          type: StorageMessageType.GET_POST_HISTORY,
+          postId: sourceImageIdForJob,
+        },
         (response) => resolve(response || { success: false }),
       );
     });
@@ -93,7 +103,7 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
     // Register job with background script
     chrome.runtime
       .sendMessage({
-        type: "jobs:register",
+        type: JobsMessageType.REGISTER,
         tabTitle: document.title,
         sourceImageId: sourceImageIdForJob,
         promptText,
@@ -143,7 +153,7 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
       entries?: HistoryEntry[];
     }>((resolve) => {
       chrome.runtime.sendMessage(
-        { type: "storage:getPostHistory", postId: sourceImageId },
+        { type: StorageMessageType.GET_POST_HISTORY, postId: sourceImageId },
         (response) => resolve(response || { success: false }),
       );
     });
@@ -278,7 +288,7 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
   logger.log("Autosubmit finished, final state:", autosubmitState);
 }
 
-// Cancel the autosubmit loop
+/** Aborts the running autosubmit loop and updates state to cancelled. */
 function cancelAutosubmit(): void {
   if (autosubmitAbortController) {
     logger.log("Cancelling autosubmit");
@@ -297,17 +307,17 @@ function cancelAutosubmit(): void {
 // URL/ID Extraction
 // =============================================================================
 
-// Extract post ID from URL if on a post page
+/** Extracts the post ID from the current URL path (e.g., /imagine/post/{id}). */
 function getPostId(): string | null {
   const pathname = window.location.pathname;
   const match = pathname.match(/^\/imagine\/post\/([^/]+)/);
   return match ? match[1] : null;
 }
 
-// Extract source image ID from the page
-// The source image has a DIRECT URL: imagine-public.x.ai/imagine-public/images/{uuid}.jpg
-// Related images use CDN: imagine-public.x.ai/cdn-cgi/image/.../imagine-public/images/{uuid}.jpg
-// We prioritize the direct URL (non-CDN) as that's the source image
+/**
+ * Extracts the source image UUID from the page by scanning img elements.
+ * Prioritizes direct URLs over CDN URLs to identify the original source image.
+ */
 function getSourceImageId(): string | null {
   // UUID pattern
   const uuidPattern =
@@ -356,12 +366,12 @@ function getSourceImageId(): string | null {
   return null;
 }
 
-// Send mode update to background script
+/** Notifies background script of a mode change via runtime messaging. */
 function sendModeUpdate(mode: Mode): void {
-  chrome.runtime.sendMessage({ type: "modeChange", mode });
+  chrome.runtime.sendMessage({ type: ContentMessageType.MODE_CHANGE, mode });
 }
 
-// Check for mode changes and log/notify
+/** Detects mode changes and notifies the background script when mode changes. */
 function checkModeChange(): void {
   const newMode = detectMode();
 
@@ -375,7 +385,7 @@ function checkModeChange(): void {
   }
 }
 
-// Debounce function to avoid excessive checks
+/** Creates a debounced version of a function that delays invocation by the specified delay. */
 function debounce<T extends (...args: unknown[]) => void>(
   fn: T,
   delay: number,
@@ -403,7 +413,7 @@ let navigationInterceptor: {
   scrollY: number;
 } | null = null;
 
-// Set up MutationObserver to watch for DOM changes
+/** Sets up a MutationObserver to detect DOM changes that might indicate mode changes. */
 function setupMutationObserver(): void {
   const observer = new MutationObserver(() => {
     debouncedModeCheck();
@@ -415,7 +425,7 @@ function setupMutationObserver(): void {
   });
 }
 
-// Intercept history API for SPA navigation
+/** Patches history.pushState/replaceState to detect SPA navigation changes. */
 function setupHistoryInterception(): void {
   // Listen for popstate (back/forward navigation)
   window.addEventListener("popstate", () => {
@@ -470,11 +480,11 @@ interface HistoryEntry {
   submitCount?: number;
 }
 
-// Save to post history via background script
+/** Saves a prompt to history via background script (content scripts can't access IndexedDB). */
 async function saveToPostHistory(postId: string, text: string): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
-      { type: "storage:saveToPostHistory", postId, text },
+      { type: StorageMessageType.SAVE_TO_POST_HISTORY, postId, text },
       (response) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
@@ -490,7 +500,7 @@ async function saveToPostHistory(postId: string, text: string): Promise<void> {
 
 // Listen for messages from popup or background
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === "getMode") {
+  if (message.type === ContentMessageType.GET_MODE) {
     sendResponse({
       mode: currentMode,
       postId: currentMode === "post" ? getPostId() : null,
@@ -499,13 +509,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "fillAndSubmit") {
+  if (message.type === PromptMessageType.FILL_AND_SUBMIT) {
     const result = fillAndSubmitVideo(message.text);
     sendResponse(result);
     return true;
   }
 
-  if (message.type === "submitFromClipboard") {
+  if (message.type === PromptMessageType.SUBMIT_FROM_CLIPBOARD) {
     // Handle async clipboard read
     (async () => {
       try {
@@ -533,7 +543,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
-  if (message.type === "clickVideoOption") {
+  if (message.type === PromptMessageType.CLICK_VIDEO_OPTION) {
     (async () => {
       const result = await clickVideoOption(message.option);
       sendResponse(result);
@@ -541,14 +551,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
-  if (message.type === "clickDownload") {
+  if (message.type === PromptMessageType.CLICK_DOWNLOAD) {
     const result = clickDownloadButton();
     sendResponse(result);
     return true;
   }
 
   // Autosubmit message handlers
-  if (message.type === "autosubmit:start") {
+  if (message.type === AutosubmitMessageType.START) {
     const { maxRetries } = message;
     logger.log(`Received autosubmit:start with maxRetries=${maxRetries}`);
 
@@ -561,14 +571,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "autosubmit:cancel") {
+  if (message.type === AutosubmitMessageType.CANCEL) {
     logger.log("Received autosubmit:cancel");
     cancelAutosubmit();
     sendResponse({ success: true, state: autosubmitState });
     return true;
   }
 
-  if (message.type === "autosubmit:getState") {
+  if (message.type === AutosubmitMessageType.GET_STATE) {
     logger.log("Received autosubmit:getState, state:", autosubmitState);
     sendResponse({ state: autosubmitState });
     return true;
@@ -577,7 +587,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-// Click the download button
+/** Clicks the download button on the page to download the current video. */
 function clickDownloadButton(): { success: boolean; error?: string } {
   const downloadBtn = document.querySelector<HTMLButtonElement>(
     'button[aria-label="Download"]',
@@ -591,7 +601,7 @@ function clickDownloadButton(): { success: boolean; error?: string } {
   return { success: true };
 }
 
-// Extract image/video UUID from a masonry card element
+/** Extracts the image/video UUID from a masonry card element's img/video src or alt. */
 function getImageIdFromCard(card: Element): string | null {
   const uuidPattern =
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -647,7 +657,7 @@ function getImageIdFromCard(card: Element): string | null {
   return null;
 }
 
-// Find the masonry card element from a click target
+/** Traverses up the DOM to find the masonry card container from a click target. */
 function findMasonryCard(target: Element): Element | null {
   // Look for the card container - it has the class containing "media-post-masonry-card"
   let current: Element | null = target;
@@ -665,7 +675,7 @@ function findMasonryCard(target: Element): Element | null {
   return null;
 }
 
-// Handle Alt+Shift+Click to open favorites in new tab
+/** Sets up Alt+Shift+Click handler to open images/videos in new background tabs. */
 function setupFavoritesClickHandler(): void {
   document.addEventListener(
     "click",
@@ -749,7 +759,7 @@ function setupFavoritesClickHandler(): void {
 
       if (imageId) {
         const url = `https://grok.com/imagine/post/${imageId}`;
-        chrome.runtime.sendMessage({ type: "openTab", url });
+        chrome.runtime.sendMessage({ type: ContentMessageType.OPEN_TAB, url });
       } else {
         logger.log("Could not extract image/video ID from card");
       }
@@ -758,7 +768,7 @@ function setupFavoritesClickHandler(): void {
   ); // Use capture phase to intercept before React handlers
 }
 
-// Initialize
+/** Initializes the content script: detects mode, sets up observers and handlers. */
 function init(): void {
   logger.log("Content script loaded");
 

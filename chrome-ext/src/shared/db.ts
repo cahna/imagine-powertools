@@ -9,7 +9,7 @@ const STORE_NAME = "postHistory";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
-// Open or create the database
+/** Opens or creates the IndexedDB database, returning a cached promise. */
 function openDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
 
@@ -44,7 +44,7 @@ interface PostRecord {
   entries: HistoryEntry[];
 }
 
-// Get entries for a specific post - O(1) lookup
+/** Retrieves history entries for a post ID with O(1) IndexedDB lookup. */
 export async function getEntries(postId: string): Promise<HistoryEntry[]> {
   const db = await openDB();
 
@@ -62,7 +62,7 @@ export async function getEntries(postId: string): Promise<HistoryEntry[]> {
   });
 }
 
-// Set entries for a specific post - O(1) write
+/** Stores history entries for a post ID, deleting the record if entries is empty. */
 export async function setEntries(
   postId: string,
   entries: HistoryEntry[],
@@ -87,7 +87,7 @@ export async function setEntries(
   });
 }
 
-// Get all records - for export functionality
+/** Retrieves all records from the database for export functionality. */
 export async function getAllRecords(): Promise<Map<string, HistoryEntry[]>> {
   const db = await openDB();
 
@@ -109,7 +109,7 @@ export async function getAllRecords(): Promise<Map<string, HistoryEntry[]>> {
   });
 }
 
-// Bulk insert records - for import functionality
+/** Bulk inserts multiple records in a single transaction for import. */
 export async function bulkSetRecords(
   records: Map<string, HistoryEntry[]>,
 ): Promise<void> {
@@ -130,7 +130,7 @@ export async function bulkSetRecords(
   });
 }
 
-// Clear all data
+/** Clears all records from the object store. */
 export async function clearAll(): Promise<void> {
   const db = await openDB();
 
@@ -144,7 +144,7 @@ export async function clearAll(): Promise<void> {
   });
 }
 
-// Get count of records
+/** Returns the total number of records in the object store. */
 export async function getRecordCount(): Promise<number> {
   const db = await openDB();
 

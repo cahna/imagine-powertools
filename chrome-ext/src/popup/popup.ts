@@ -7,6 +7,12 @@ import {
   deleteFromPostHistory,
 } from "../shared/storage";
 import { logger } from "../shared/logger";
+import {
+  ContentMessageType,
+  PromptMessageType,
+  AutosubmitMessageType,
+  JobsMessageType,
+} from "../shared/messageTypes";
 
 type Mode = "favorites" | "results" | "post" | "none";
 
@@ -72,6 +78,7 @@ interface RenderHistoryOptions {
   onDelete: (entry: HistoryEntry) => void;
 }
 
+/** Renders the prompt history list with restore and delete buttons for each entry. */
 function renderHistory(
   entries: HistoryEntry[],
   listEl: HTMLElement,
@@ -132,7 +139,7 @@ function renderHistory(
   }
 }
 
-// Format relative time (e.g., "2m ago")
+/** Formats a timestamp as a human-readable relative time string (e.g., "2m ago"). */
 function formatRelativeTime(timestamp: number): string {
   const seconds = Math.floor((Date.now() - timestamp) / 1000);
   if (seconds < 60) return `${seconds}s ago`;
@@ -144,7 +151,7 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
-// Get status badge text and class for a job
+/** Returns display text and CSS class for an autosubmit job's current state. */
 function getJobStatusInfo(state: AutosubmitState): {
   text: string;
   className: string;
@@ -172,7 +179,7 @@ function getJobStatusInfo(state: AutosubmitState): {
   return { text: "Idle", className: "stopped" };
 }
 
-// Render jobs list
+/** Renders the jobs list UI with status badges and action buttons. */
 function renderJobs(
   jobs: JobInfo[],
   container: HTMLElement,
@@ -243,7 +250,7 @@ function renderJobs(
         e.stopPropagation();
         try {
           await chrome.tabs.sendMessage(job.tabId, {
-            type: "autosubmit:cancel",
+            type: AutosubmitMessageType.CANCEL,
           });
         } catch (err) {
           logger.error("Failed to cancel job:", err);
@@ -261,7 +268,7 @@ function renderJobs(
         e.stopPropagation();
         try {
           await chrome.tabs.sendMessage(job.tabId, {
-            type: "autosubmit:start",
+            type: AutosubmitMessageType.START,
             maxRetries: job.maxRetries,
           });
         } catch (err) {
@@ -293,13 +300,15 @@ function renderJobs(
   }
 }
 
-// Load and render jobs
+/** Loads active jobs from the background script and renders them. */
 async function loadJobs(
   container: HTMLElement,
   noJobsEl: HTMLElement,
 ): Promise<void> {
   try {
-    const response = await chrome.runtime.sendMessage({ type: "jobs:getAll" });
+    const response = await chrome.runtime.sendMessage({
+      type: JobsMessageType.GET_ALL,
+    });
     if (response?.success && response.jobs) {
       renderJobs(response.jobs, container, noJobsEl);
     }
@@ -308,7 +317,7 @@ async function loadJobs(
   }
 }
 
-// Generate the console script for setting up keyboard shortcuts
+/** Generates a JavaScript snippet for batch-configuring extension keyboard shortcuts. */
 function generateShortcutsScript(): string {
   return `(async () => {
   const HOTKEYS = {
@@ -450,6 +459,7 @@ function generateShortcutsScript(): string {
 })();`;
 }
 
+/** Sets up the click handler for copying the shortcuts script to clipboard. */
 function setupShortcutsScriptHandler(): void {
   const copyBtn = document.getElementById("copy-shortcuts-script");
   const shortcutsStatus = document.getElementById("shortcuts-status");
@@ -507,7 +517,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Listen for autosubmit status updates to refresh jobs list
   if (jobsList && noJobsEl) {
     chrome.runtime.onMessage.addListener((message) => {
-      if (message.type === "autosubmit:status") {
+      if (message.type === AutosubmitMessageType.STATUS) {
         // Check if Jobs tab is currently active
         const jobsTab = document.getElementById("tab-jobs");
         if (jobsTab?.classList.contains("active")) {
@@ -592,7 +602,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, { type: "getMode" });
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: ContentMessageType.GET_MODE,
+    });
 
     const mode: Mode = response?.mode ?? "none";
     const sourceImageId: string | null = response?.sourceImageId ?? null;
@@ -646,7 +658,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         try {
           const result = await chrome.tabs.sendMessage(tab.id!, {
-            type: "fillAndSubmit",
+            type: PromptMessageType.FILL_AND_SUBMIT,
             text,
           });
 
@@ -720,7 +732,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Query current autosubmit state on popup open
       try {
         const stateResponse = await chrome.tabs.sendMessage(tab.id!, {
-          type: "autosubmit:getState",
+          type: AutosubmitMessageType.GET_STATE,
         });
         if (stateResponse?.state) {
           logger.log("Initial autosubmit state:", stateResponse.state);
@@ -732,7 +744,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Listen for autosubmit status updates from content script
       chrome.runtime.onMessage.addListener((message, sender) => {
-        if (message.type === "autosubmit:status" && message.state) {
+        if (message.type === AutosubmitMessageType.STATUS && message.state) {
           // Only process if from the tab we're viewing
           if (sender.tab?.id === tab?.id) {
             logger.log("Received autosubmit:status:", message.state);
@@ -762,7 +774,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           // Now start autosubmit
           try {
             await chrome.tabs.sendMessage(tab.id!, {
-              type: "autosubmit:start",
+              type: AutosubmitMessageType.START,
               maxRetries,
             });
           } catch (err) {
@@ -777,7 +789,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           logger.log("Cancelling autosubmit");
           try {
             await chrome.tabs.sendMessage(tab.id!, {
-              type: "autosubmit:cancel",
+              type: AutosubmitMessageType.CANCEL,
             });
           } catch (err) {
             logger.error("Failed to cancel autosubmit:", err);

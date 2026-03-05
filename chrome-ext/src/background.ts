@@ -6,6 +6,13 @@ import {
   saveToPostHistory,
 } from "./shared/storage";
 import { logger } from "./shared/logger";
+import {
+  ContentMessageType,
+  StorageMessageType,
+  PromptMessageType,
+  AutosubmitMessageType,
+  JobsMessageType,
+} from "./shared/messageTypes";
 
 type Mode = "favorites" | "results" | "post" | "none";
 
@@ -78,6 +85,7 @@ interface CacheEntry {
 
 const historyCache = new Map<string, CacheEntry>();
 
+/** Retrieves cached history entries for a post ID, updating access time for LRU. */
 function cacheGet(postId: string): HistoryEntry[] | null {
   const entry = historyCache.get(postId);
   if (entry) {
@@ -87,6 +95,7 @@ function cacheGet(postId: string): HistoryEntry[] | null {
   return null;
 }
 
+/** Stores history entries in cache, evicting the oldest entry if cache is full. */
 function cacheSet(postId: string, entries: HistoryEntry[]): void {
   // Evict oldest entries if cache is full
   if (historyCache.size >= CACHE_MAX_SIZE) {
@@ -109,6 +118,7 @@ function cacheSet(postId: string, entries: HistoryEntry[]): void {
   });
 }
 
+/** Removes a post ID from the cache, typically after a write operation. */
 function cacheInvalidate(postId: string): void {
   historyCache.delete(postId);
 }
@@ -117,7 +127,7 @@ function cacheInvalidate(postId: string): void {
 // Cached storage operations
 // =============================================================================
 
-// Get post history with caching
+/** Retrieves post history with LRU caching for fast repeated access. */
 async function getCachedPostHistory(postId: string): Promise<HistoryEntry[]> {
   const cached = cacheGet(postId);
   if (cached !== null) {
@@ -129,7 +139,7 @@ async function getCachedPostHistory(postId: string): Promise<HistoryEntry[]> {
   return entries;
 }
 
-// Save to post history and invalidate cache
+/** Saves a prompt to history and invalidates the cache entry for consistency. */
 async function cachedSaveToPostHistory(
   postId: string,
   text: string,
@@ -138,7 +148,7 @@ async function cachedSaveToPostHistory(
   cacheInvalidate(postId);
 }
 
-// Get the most recent history entry for a post (cached)
+/** Retrieves the most recent history entry for a post, sorted by timestamp. */
 async function getMostRecentHistoryEntry(
   postId: string,
 ): Promise<HistoryEntry | null> {
@@ -178,7 +188,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 // Listen for messages from content scripts or popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
-    case "modeChange": {
+    case ContentMessageType.MODE_CHANGE: {
       const tabId = sender.tab?.id;
       if (tabId !== undefined) {
         const previousMode = tabModes.get(tabId);
@@ -191,20 +201,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
-    case "getMode": {
+    case ContentMessageType.GET_MODE: {
       const mode = tabModes.get(message.tabId) ?? "none";
       sendResponse({ mode });
       break;
     }
 
-    case "openTab": {
+    case ContentMessageType.OPEN_TAB: {
       chrome.tabs.create({ url: message.url, active: false });
       sendResponse({ status: "ok" });
       break;
     }
 
     // Storage operations for content script (IndexedDB not accessible from content scripts)
-    case "storage:getPostHistory": {
+    case StorageMessageType.GET_POST_HISTORY: {
       (async () => {
         try {
           const entries = await getCachedPostHistory(message.postId);
@@ -217,7 +227,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep channel open for async response
     }
 
-    case "storage:saveToPostHistory": {
+    case StorageMessageType.SAVE_TO_POST_HISTORY: {
       (async () => {
         try {
           await cachedSaveToPostHistory(message.postId, message.text);
@@ -231,7 +241,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     // Job registry operations for the Jobs tab
-    case "jobs:register": {
+    case JobsMessageType.REGISTER: {
       const tabId = sender.tab?.id;
       if (tabId !== undefined) {
         const now = Date.now();
@@ -260,13 +270,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
-    case "jobs:getAll": {
+    case JobsMessageType.GET_ALL: {
       const jobs = Array.from(activeJobs.values());
       sendResponse({ success: true, jobs });
       break;
     }
 
-    case "jobs:remove": {
+    case JobsMessageType.REMOVE: {
       const tabId = message.tabId;
       if (tabId !== undefined && activeJobs.has(tabId)) {
         activeJobs.delete(tabId);
@@ -276,7 +286,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
-    case "autosubmit:status": {
+    case AutosubmitMessageType.STATUS: {
       // Update job state when content script reports status
       const tabId = sender.tab?.id;
       if (tabId !== undefined && activeJobs.has(tabId)) {
@@ -312,7 +322,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // Tab navigation
 // =============================================================================
 
-// Handle tab navigation commands
+/** Switches to the adjacent tab in the specified direction with wraparound. */
 async function handleTabNavigation(direction: "left" | "right"): Promise<void> {
   const tabs = await chrome.tabs.query({ currentWindow: true });
   const activeTab = tabs.find((t) => t.active);
@@ -377,7 +387,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       // Send message to content script to click video option
       try {
         const result = await chrome.tabs.sendMessage(tab.id, {
-          type: "clickVideoOption",
+          type: PromptMessageType.CLICK_VIDEO_OPTION,
           option,
         });
 
@@ -417,7 +427,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       // Send message to content script to click download button
       try {
         const result = await chrome.tabs.sendMessage(tab.id, {
-          type: "clickDownload",
+          type: PromptMessageType.CLICK_DOWNLOAD,
         });
 
         if (result && !result.success) {
@@ -464,7 +474,9 @@ chrome.commands.onCommand.addListener(async (command) => {
     // Query the content script for mode and post ID
     let modeResponse;
     try {
-      modeResponse = await chrome.tabs.sendMessage(tab.id, { type: "getMode" });
+      modeResponse = await chrome.tabs.sendMessage(tab.id, {
+        type: ContentMessageType.GET_MODE,
+      });
     } catch (error) {
       logger.log("Content script not responding:", error);
       return;
@@ -504,7 +516,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       // Send fillAndSubmit to the content script
       try {
         const result = await chrome.tabs.sendMessage(tab.id, {
-          type: "fillAndSubmit",
+          type: PromptMessageType.FILL_AND_SUBMIT,
           text: entry.text,
         });
 
@@ -518,7 +530,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       // Send submitFromClipboard to the content script
       try {
         const result = await chrome.tabs.sendMessage(tab.id, {
-          type: "submitFromClipboard",
+          type: PromptMessageType.SUBMIT_FROM_CLIPBOARD,
           sourceImageId,
         });
 
@@ -545,7 +557,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       // Send autosubmit:start to the content script with default retries
       try {
         const result = await chrome.tabs.sendMessage(tab.id, {
-          type: "autosubmit:start",
+          type: AutosubmitMessageType.START,
           maxRetries: 10,
         });
 

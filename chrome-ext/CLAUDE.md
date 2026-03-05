@@ -66,10 +66,7 @@ Chrome Manifest V3 extension for adding power-user features to Imagine (grok.com
 
 **Storage**: Prompt history stored in IndexedDB (`ImaginePowerTools` database, `postHistory` object store), keyed by source image UUID. Each record contains `{ postId, entries: HistoryEntry[] }`. The background script maintains an LRU cache (100 entries) for fast reads during rapid tab cycling.
 
-**Message Types**:
-
-- Content script: `modeChange`, `getMode`, `fillAndSubmit`, `submitFromClipboard`, `clickVideoOption`, `clickDownload`, `openTab`
-- Storage (content→background): `storage:getPostHistory`, `storage:saveToPostHistory`
+**Message Types** (defined in `shared/messageTypes.ts`):
 
 ### Build System
 
@@ -89,3 +86,27 @@ Uses Vitest with jsdom for behavioral tests. Key files:
 - `src/content.core.ts` - Functions extracted from content.ts to enable testing
 
 Tests verify DOM interactions like clicking video options, filling prompts, and detecting page state. This catches bugs like accidentally removing helper functions that are still called.
+
+## Contributing Guidelines
+
+### Code Style
+
+- **Message Types**: Use constants from `shared/messageTypes.ts` instead of magic strings. Import the appropriate `*MessageType` const object and use its properties (e.g., `ContentMessageType.GET_MODE` instead of `"getMode"`).
+
+- **Docstrings**: Add JSDoc-style docstrings (`/** ... */`) to all functions describing what they do. Focus on the "what" not the "how". No need to document parameters or return types (TypeScript handles that).
+
+- **Const Objects over Enums**: Prefer `as const` objects over TypeScript enums for better tree-shaking and runtime behavior.
+
+### Adding New Message Types
+
+1. Add the new message type to the appropriate const object in `shared/messageTypes.ts`
+2. Import and use the constant in both sender and receiver files
+3. Update this documentation if adding a new message type category
+
+### Pre-commit Checklist
+
+- [ ] Add tests for new DOM interactions in `content.test.ts`
+- [ ] Add tests for any new/changed "pure" utility functions
+- [ ] Run `npx prettier --write .`
+- [ ] `npm run typecheck` succeeds
+- [ ] `npm test` succeeds

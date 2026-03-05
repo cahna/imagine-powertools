@@ -16,6 +16,7 @@ export interface PostHistory {
 // Legacy key - kept for reference but no longer used
 export const STORAGE_KEY = "postHistory";
 
+/** Retrieves all prompt history across all posts as a single object. */
 export async function getAllHistory(): Promise<PostHistory> {
   const records = await db.getAllRecords();
   const history: PostHistory = {};
@@ -25,10 +26,12 @@ export async function getAllHistory(): Promise<PostHistory> {
   return history;
 }
 
+/** Retrieves prompt history entries for a specific post ID. */
 export async function getPostHistory(postId: string): Promise<HistoryEntry[]> {
   return db.getEntries(postId);
 }
 
+/** Saves a prompt to history, incrementing submitCount if the same text exists. */
 export async function saveToPostHistory(
   postId: string,
   text: string,
@@ -55,6 +58,7 @@ export async function saveToPostHistory(
   await db.setEntries(postId, entries);
 }
 
+/** Deletes a specific history entry by its timestamp. */
 export async function deleteFromPostHistory(
   postId: string,
   timestamp: number,
@@ -64,6 +68,7 @@ export async function deleteFromPostHistory(
   await db.setEntries(postId, filtered);
 }
 
+/** Type guard that validates imported data conforms to PostHistory structure. */
 export function validatePostHistory(data: unknown): data is PostHistory {
   if (typeof data !== "object" || data === null) {
     return false;
@@ -94,6 +99,7 @@ export function validatePostHistory(data: unknown): data is PostHistory {
   return true;
 }
 
+/** Merges incoming history into existing, skipping duplicate post IDs. */
 export function mergeHistories(
   existing: PostHistory,
   incoming: PostHistory,
@@ -118,7 +124,7 @@ export function mergeHistories(
   return { merged, addedCount, skippedCount };
 }
 
-// Bulk import - writes all records to IndexedDB in a single transaction
+/** Bulk imports history records to IndexedDB in a single transaction. */
 export async function bulkImportHistory(history: PostHistory): Promise<void> {
   const records = new Map<string, HistoryEntry[]>();
   for (const postId in history) {
@@ -127,7 +133,7 @@ export async function bulkImportHistory(history: PostHistory): Promise<void> {
   await db.bulkSetRecords(records);
 }
 
-// Clear all history data
+/** Deletes all history data from IndexedDB. */
 export async function clearAllHistory(): Promise<void> {
   await db.clearAll();
 }
