@@ -75,7 +75,7 @@ interface RenderHistoryOptions {
 function renderHistory(
   entries: HistoryEntry[],
   listEl: HTMLElement,
-  options: RenderHistoryOptions
+  options: RenderHistoryOptions,
 ): void {
   listEl.innerHTML = "";
 
@@ -145,7 +145,10 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 // Get status badge text and class for a job
-function getJobStatusInfo(state: AutosubmitState): { text: string; className: string } {
+function getJobStatusInfo(state: AutosubmitState): {
+  text: string;
+  className: string;
+} {
   if (state.status === "running") {
     return {
       text: `Running ${state.attempt}/${state.maxRetries}`,
@@ -170,7 +173,11 @@ function getJobStatusInfo(state: AutosubmitState): { text: string; className: st
 }
 
 // Render jobs list
-function renderJobs(jobs: JobInfo[], container: HTMLElement, noJobsEl: HTMLElement): void {
+function renderJobs(
+  jobs: JobInfo[],
+  container: HTMLElement,
+  noJobsEl: HTMLElement,
+): void {
   container.innerHTML = "";
 
   if (jobs.length === 0) {
@@ -235,7 +242,9 @@ function renderJobs(jobs: JobInfo[], container: HTMLElement, noJobsEl: HTMLEleme
       cancelBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         try {
-          await chrome.tabs.sendMessage(job.tabId, { type: "autosubmit:cancel" });
+          await chrome.tabs.sendMessage(job.tabId, {
+            type: "autosubmit:cancel",
+          });
         } catch (err) {
           logger.error("Failed to cancel job:", err);
         }
@@ -285,7 +294,10 @@ function renderJobs(jobs: JobInfo[], container: HTMLElement, noJobsEl: HTMLEleme
 }
 
 // Load and render jobs
-async function loadJobs(container: HTMLElement, noJobsEl: HTMLElement): Promise<void> {
+async function loadJobs(
+  container: HTMLElement,
+  noJobsEl: HTMLElement,
+): Promise<void> {
   try {
     const response = await chrome.runtime.sendMessage({ type: "jobs:getAll" });
     if (response?.success && response.jobs) {
@@ -311,7 +323,8 @@ function generateShortcutsScript(): string {
     'video-spicy': 'X',
     'video-fun': 'F',
     'video-normal': 'N',
-    'download-video': 'D'
+    'download-video': 'D',
+    'autosubmit': 'A'
   };
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -446,7 +459,8 @@ function setupShortcutsScriptHandler(): void {
       try {
         const script = generateShortcutsScript();
         await navigator.clipboard.writeText(script);
-        shortcutsStatus.textContent = "Copied! Paste in DevTools console (F12) on the shortcuts page.";
+        shortcutsStatus.textContent =
+          "Copied! Paste in DevTools console (F12) on the shortcuts page.";
         shortcutsStatus.className = "import-status success";
         shortcutsStatus.classList.remove("hidden");
 
@@ -514,8 +528,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const modeBadge = document.getElementById("mode-badge");
   const statusEl = document.getElementById("status");
   const postUi = document.getElementById("post-ui");
-  const postForm = document.getElementById("post-form") as HTMLFormElement | null;
-  const postInput = document.getElementById("post-input") as HTMLTextAreaElement | null;
+  const postForm = document.getElementById(
+    "post-form",
+  ) as HTMLFormElement | null;
+  const postInput = document.getElementById(
+    "post-input",
+  ) as HTMLTextAreaElement | null;
   const historyList = document.getElementById("history-list");
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -545,7 +563,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     const shortcutsSection = document.getElementById("shortcuts-section");
-    const dataTabBtn = document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="data"]');
+    const dataTabBtn = document.querySelector<HTMLButtonElement>(
+      '.tab-btn[data-tab="data"]',
+    );
 
     if (shortcutsSection) {
       shortcutsSection.classList.remove("hidden");
@@ -565,7 +585,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       modeBadge.className = "mode-badge mode-none";
     }
     if (statusEl) {
-      statusEl.textContent = "Navigate to grok.com/imagine to use this extension";
+      statusEl.textContent =
+        "Navigate to grok.com/imagine to use this extension";
     }
     return;
   }
@@ -585,7 +606,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       statusEl.textContent = tab.title || url;
     }
 
-    if (mode === "post" && sourceImageId && postUi && postForm && postInput && historyList) {
+    if (
+      mode === "post" &&
+      sourceImageId &&
+      postUi &&
+      postForm &&
+      postInput &&
+      historyList
+    ) {
       postUi.classList.remove("hidden");
 
       const historyOptions: RenderHistoryOptions = {
@@ -634,15 +662,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Autosubmit UI Setup
       // =======================================================================
       const autosubmitBtn = document.getElementById(
-        "autosubmit-btn"
+        "autosubmit-btn",
       ) as HTMLButtonElement | null;
       const autosubmitCountInput = document.getElementById(
-        "autosubmit-count"
+        "autosubmit-count",
       ) as HTMLInputElement | null;
       const autosubmitStatusEl = document.getElementById("autosubmit-status");
-      const autosubmitProgressEl = document.getElementById("autosubmit-progress");
+      const autosubmitProgressEl = document.getElementById(
+        "autosubmit-progress",
+      );
       const autosubmitCancelBtn = document.getElementById(
-        "autosubmit-cancel"
+        "autosubmit-cancel",
       ) as HTMLButtonElement | null;
 
       // Update UI based on autosubmit state
@@ -681,7 +711,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           autosubmitCancelBtn.classList.add("hidden");
           const reasonLabel = STOP_REASON_LABELS[state.reason] || state.reason;
           autosubmitStatusEl.classList.add(
-            state.reason === "rate_limited" ? "error" : "stopped"
+            state.reason === "rate_limited" ? "error" : "stopped",
           );
           autosubmitProgressEl.textContent = `Stopped: ${reasonLabel} (attempt ${state.attempt})`;
         }
@@ -716,7 +746,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         autosubmitBtn.addEventListener("click", async () => {
           const maxRetries = Math.max(
             1,
-            parseInt(autosubmitCountInput.value, 10) || 10
+            parseInt(autosubmitCountInput.value, 10) || 10,
           );
           logger.log(`Starting autosubmit with maxRetries=${maxRetries}`);
 
@@ -746,7 +776,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         autosubmitCancelBtn.addEventListener("click", async () => {
           logger.log("Cancelling autosubmit");
           try {
-            await chrome.tabs.sendMessage(tab.id!, { type: "autosubmit:cancel" });
+            await chrome.tabs.sendMessage(tab.id!, {
+              type: "autosubmit:cancel",
+            });
           } catch (err) {
             logger.error("Failed to cancel autosubmit:", err);
           }

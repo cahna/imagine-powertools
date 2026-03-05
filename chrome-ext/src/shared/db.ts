@@ -65,7 +65,7 @@ export async function getEntries(postId: string): Promise<HistoryEntry[]> {
 // Set entries for a specific post - O(1) write
 export async function setEntries(
   postId: string,
-  entries: HistoryEntry[]
+  entries: HistoryEntry[],
 ): Promise<void> {
   const db = await openDB();
 
@@ -111,7 +111,7 @@ export async function getAllRecords(): Promise<Map<string, HistoryEntry[]>> {
 
 // Bulk insert records - for import functionality
 export async function bulkSetRecords(
-  records: Map<string, HistoryEntry[]>
+  records: Map<string, HistoryEntry[]>,
 ): Promise<void> {
   const db = await openDB();
 

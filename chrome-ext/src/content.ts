@@ -81,25 +81,27 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
     }>((resolve) => {
       chrome.runtime.sendMessage(
         { type: "storage:getPostHistory", postId: sourceImageIdForJob },
-        (response) => resolve(response || { success: false })
+        (response) => resolve(response || { success: false }),
       );
     });
 
     const sortedForJob = historyForJob.entries?.sort(
-      (a, b) => b.timestamp - a.timestamp
+      (a, b) => b.timestamp - a.timestamp,
     );
     const promptText = sortedForJob?.[0]?.text || "";
 
     // Register job with background script
-    chrome.runtime.sendMessage({
-      type: "jobs:register",
-      tabTitle: document.title,
-      sourceImageId: sourceImageIdForJob,
-      promptText,
-      maxRetries,
-    }).catch(() => {
-      // Background script may be unavailable, ignore
-    });
+    chrome.runtime
+      .sendMessage({
+        type: "jobs:register",
+        tabTitle: document.title,
+        sourceImageId: sourceImageIdForJob,
+        promptText,
+        maxRetries,
+      })
+      .catch(() => {
+        // Background script may be unavailable, ignore
+      });
   }
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -142,7 +144,7 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
     }>((resolve) => {
       chrome.runtime.sendMessage(
         { type: "storage:getPostHistory", postId: sourceImageId },
-        (response) => resolve(response || { success: false })
+        (response) => resolve(response || { success: false }),
       );
     });
 
@@ -155,7 +157,7 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
 
     // Get the most recent entry
     const sorted = [...historyResponse.entries].sort(
-      (a, b) => b.timestamp - a.timestamp
+      (a, b) => b.timestamp - a.timestamp,
     );
     const mostRecent = sorted[0];
     logger.log(`Resubmitting prompt: "${mostRecent.text.substring(0, 50)}..."`);
@@ -186,7 +188,7 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
     const startOutcome = await waitForOutcome(
       ["generating", "rate_limited"],
       GENERATION_START_TIMEOUT_MS,
-      signal
+      signal,
     );
 
     if (signal.aborted) break;
@@ -219,7 +221,7 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
     const outcome = await waitForOutcome(
       ["success", "moderated", "rate_limited"],
       ATTEMPT_TIMEOUT_MS,
-      signal
+      signal,
     );
 
     if (signal.aborted) break;
@@ -308,7 +310,8 @@ function getPostId(): string | null {
 // We prioritize the direct URL (non-CDN) as that's the source image
 function getSourceImageId(): string | null {
   // UUID pattern
-  const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const uuidPattern =
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
   const images = document.querySelectorAll<HTMLImageElement>("img");
 
@@ -375,7 +378,7 @@ function checkModeChange(): void {
 // Debounce function to avoid excessive checks
 function debounce<T extends (...args: unknown[]) => void>(
   fn: T,
-  delay: number
+  delay: number,
 ): (...args: Parameters<T>) => void {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
@@ -423,7 +426,10 @@ function setupHistoryInterception(): void {
   const originalPushState = history.pushState.bind(history);
   history.pushState = function (...args) {
     const url = args[2] as string | undefined;
-    logger.log("pushState called:", { url, interceptorEnabled: navigationInterceptor?.enabled });
+    logger.log("pushState called:", {
+      url,
+      interceptorEnabled: navigationInterceptor?.enabled,
+    });
 
     // Check if we're intercepting navigation to capture UUID
     if (navigationInterceptor?.enabled) {
@@ -453,7 +459,6 @@ function setupHistoryInterception(): void {
   };
 }
 
-
 // =============================================================================
 // Storage operations via message passing to background script
 // (IndexedDB is not accessible from content scripts)
@@ -478,7 +483,7 @@ async function saveToPostHistory(postId: string, text: string): Promise<void> {
         } else {
           reject(new Error(response?.error || "Unknown error"));
         }
-      }
+      },
     );
   });
 }
@@ -574,7 +579,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 // Click the download button
 function clickDownloadButton(): { success: boolean; error?: string } {
-  const downloadBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Download"]');
+  const downloadBtn = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Download"]',
+  );
 
   if (!downloadBtn) {
     return { success: false, error: "Download button not found" };
@@ -586,13 +593,16 @@ function clickDownloadButton(): { success: boolean; error?: string } {
 
 // Extract image/video UUID from a masonry card element
 function getImageIdFromCard(card: Element): string | null {
-  const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  const uuidPattern =
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
   // First, check for video element (videos have UUID in different URL pattern)
   const video = card.querySelector<HTMLVideoElement>("video");
   if (video?.src) {
     // Pattern: assets.grok.com/users/.../generated/{uuid}/generated_video.mp4
-    const videoMatch = video.src.match(/generated\/([0-9a-f-]+)\/generated_video\.mp4/i);
+    const videoMatch = video.src.match(
+      /generated\/([0-9a-f-]+)\/generated_video\.mp4/i,
+    );
     if (videoMatch && videoMatch[1] && uuidPattern.test(videoMatch[1])) {
       return videoMatch[1];
     }
@@ -609,13 +619,21 @@ function getImageIdFromCard(card: Element): string | null {
     // Check src first for URL-based patterns
     if (img.src) {
       // Pattern: imagine-public/images/{uuid}.jpg (standard images)
-      const imgMatch = img.src.match(/imagine-public\/images\/([0-9a-f-]+)\.jpg/i);
+      const imgMatch = img.src.match(
+        /imagine-public\/images\/([0-9a-f-]+)\.jpg/i,
+      );
       if (imgMatch && imgMatch[1] && uuidPattern.test(imgMatch[1])) {
         return imgMatch[1];
       }
       // Pattern: assets.grok.com/users/.../generated/{uuid}/preview_image.jpg (video thumbnails)
-      const previewMatch = img.src.match(/generated\/([0-9a-f-]+)\/preview_image\.jpg/i);
-      if (previewMatch && previewMatch[1] && uuidPattern.test(previewMatch[1])) {
+      const previewMatch = img.src.match(
+        /generated\/([0-9a-f-]+)\/preview_image\.jpg/i,
+      );
+      if (
+        previewMatch &&
+        previewMatch[1] &&
+        uuidPattern.test(previewMatch[1])
+      ) {
         return previewMatch[1];
       }
     }
@@ -649,86 +667,95 @@ function findMasonryCard(target: Element): Element | null {
 
 // Handle Alt+Shift+Click to open favorites in new tab
 function setupFavoritesClickHandler(): void {
-  document.addEventListener("click", async (e) => {
-    // Skip synthetic clicks we dispatch for navigation interception
-    if ((e as MouseEvent & { _syntheticForInterception?: boolean })._syntheticForInterception) {
-      return;
-    }
+  document.addEventListener(
+    "click",
+    async (e) => {
+      // Skip synthetic clicks we dispatch for navigation interception
+      if (
+        (e as MouseEvent & { _syntheticForInterception?: boolean })
+          ._syntheticForInterception
+      ) {
+        return;
+      }
 
-    // Only handle Alt+Shift+Click
-    if (!e.altKey || !e.shiftKey) {
-      return;
-    }
+      // Only handle Alt+Shift+Click
+      if (!e.altKey || !e.shiftKey) {
+        return;
+      }
 
-    // Only in favorites or results mode (both show image/video grids)
-    if (currentMode !== "favorites" && currentMode !== "results") {
-      return;
-    }
+      // Only in favorites or results mode (both show image/video grids)
+      if (currentMode !== "favorites" && currentMode !== "results") {
+        return;
+      }
 
-    const target = e.target as Element;
-    const card = findMasonryCard(target);
+      const target = e.target as Element;
+      const card = findMasonryCard(target);
 
-    if (!card) {
-      return;
-    }
+      if (!card) {
+        return;
+      }
 
-    // Prevent default click behavior
-    e.preventDefault();
-    e.stopPropagation();
+      // Prevent default click behavior
+      e.preventDefault();
+      e.stopPropagation();
 
-    // Try direct DOM extraction first (works for favorites and cached images)
-    let imageId = getImageIdFromCard(card);
+      // Try direct DOM extraction first (works for favorites and cached images)
+      let imageId = getImageIdFromCard(card);
 
-    // Fallback: simulate click and capture navigation URL (for fresh result images)
-    if (!imageId) {
-      logger.log("Attempting navigation capture fallback");
-      const scrollY = window.scrollY;
-      const originalUrl = window.location.href;
+      // Fallback: simulate click and capture navigation URL (for fresh result images)
+      if (!imageId) {
+        logger.log("Attempting navigation capture fallback");
+        const scrollY = window.scrollY;
+        const originalUrl = window.location.href;
 
-      // Create synthetic click without modifiers
-      const syntheticClick = new MouseEvent("click", {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-      }) as MouseEvent & { _syntheticForInterception?: boolean };
-      syntheticClick._syntheticForInterception = true;
+        // Create synthetic click without modifiers
+        const syntheticClick = new MouseEvent("click", {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+        }) as MouseEvent & { _syntheticForInterception?: boolean };
+        syntheticClick._syntheticForInterception = true;
 
-      // Dispatch on the image or card
-      const clickTarget = card.querySelector("img") || card;
-      logger.log("Dispatching synthetic click on:", clickTarget.tagName);
-      clickTarget.dispatchEvent(syntheticClick);
+        // Dispatch on the image or card
+        const clickTarget = card.querySelector("img") || card;
+        logger.log("Dispatching synthetic click on:", clickTarget.tagName);
+        clickTarget.dispatchEvent(syntheticClick);
 
-      // Poll for URL change (React navigation is async)
-      for (let i = 0; i < 20; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Poll for URL change (React navigation is async)
+        for (let i = 0; i < 20; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
 
-        if (window.location.href !== originalUrl) {
-          logger.log("URL changed to:", window.location.href);
-          const match = window.location.pathname.match(/\/imagine\/post\/([^/?]+)/);
-          if (match) {
-            imageId = match[1];
-            // Go back to results page
-            history.back();
-            // Restore scroll position after navigation
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            window.scrollTo(0, scrollY);
+          if (window.location.href !== originalUrl) {
+            logger.log("URL changed to:", window.location.href);
+            const match = window.location.pathname.match(
+              /\/imagine\/post\/([^/?]+)/,
+            );
+            if (match) {
+              imageId = match[1];
+              // Go back to results page
+              history.back();
+              // Restore scroll position after navigation
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              window.scrollTo(0, scrollY);
+            }
+            break;
           }
-          break;
+        }
+
+        if (!imageId) {
+          logger.log("URL did not change after synthetic click");
         }
       }
 
-      if (!imageId) {
-        logger.log("URL did not change after synthetic click");
+      if (imageId) {
+        const url = `https://grok.com/imagine/post/${imageId}`;
+        chrome.runtime.sendMessage({ type: "openTab", url });
+      } else {
+        logger.log("Could not extract image/video ID from card");
       }
-    }
-
-    if (imageId) {
-      const url = `https://grok.com/imagine/post/${imageId}`;
-      chrome.runtime.sendMessage({ type: "openTab", url });
-    } else {
-      logger.log("Could not extract image/video ID from card");
-    }
-  }, true); // Use capture phase to intercept before React handlers
+    },
+    true,
+  ); // Use capture phase to intercept before React handlers
 }
 
 // Initialize

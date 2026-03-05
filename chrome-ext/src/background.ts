@@ -21,7 +21,12 @@ type AutosubmitState =
   | { status: "success"; attempt: number }
   | {
       status: "stopped";
-      reason: "cancelled" | "rate_limited" | "max_retries" | "timeout" | "navigated";
+      reason:
+        | "cancelled"
+        | "rate_limited"
+        | "max_retries"
+        | "timeout"
+        | "navigated";
       attempt: number;
     };
 
@@ -125,13 +130,18 @@ async function getCachedPostHistory(postId: string): Promise<HistoryEntry[]> {
 }
 
 // Save to post history and invalidate cache
-async function cachedSaveToPostHistory(postId: string, text: string): Promise<void> {
+async function cachedSaveToPostHistory(
+  postId: string,
+  text: string,
+): Promise<void> {
   await saveToPostHistory(postId, text);
   cacheInvalidate(postId);
 }
 
 // Get the most recent history entry for a post (cached)
-async function getMostRecentHistoryEntry(postId: string): Promise<HistoryEntry | null> {
+async function getMostRecentHistoryEntry(
+  postId: string,
+): Promise<HistoryEntry | null> {
   try {
     const entries = await getCachedPostHistory(postId);
 
@@ -174,7 +184,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const previousMode = tabModes.get(tabId);
         tabModes.set(tabId, message.mode);
         logger.log(
-          `Tab ${tabId} mode: ${previousMode ?? "unknown"} -> ${message.mode}`
+          `Tab ${tabId} mode: ${previousMode ?? "unknown"} -> ${message.mode}`,
         );
       }
       sendResponse({ status: "ok" });
@@ -231,12 +241,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sourceImageId: message.sourceImageId,
           promptText: message.promptText,
           maxRetries: message.maxRetries,
-          state: { status: "running", attempt: 1, maxRetries: message.maxRetries, phase: "submitting" },
+          state: {
+            status: "running",
+            attempt: 1,
+            maxRetries: message.maxRetries,
+            phase: "submitting",
+          },
           startedAt: now,
           updatedAt: now,
         };
         activeJobs.set(tabId, job);
-        logger.log(`Job registered for tab ${tabId}:`, job.promptText.substring(0, 50));
+        logger.log(
+          `Job registered for tab ${tabId}:`,
+          job.promptText.substring(0, 50),
+        );
       }
       sendResponse({ success: true });
       break;
@@ -340,7 +358,10 @@ chrome.commands.onCommand.addListener(async (command) => {
     logger.log(`Video option command: ${option}`);
 
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
 
       if (!tab?.id) {
         logger.log("No active tab found");
@@ -377,7 +398,10 @@ chrome.commands.onCommand.addListener(async (command) => {
     logger.log("Download video command triggered");
 
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
 
       if (!tab?.id) {
         logger.log("No active tab found");
@@ -408,7 +432,11 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
-  if (command !== "resubmit-last" && command !== "submit-clipboard") {
+  if (
+    command !== "resubmit-last" &&
+    command !== "submit-clipboard" &&
+    command !== "autosubmit"
+  ) {
     return;
   }
 
@@ -416,7 +444,10 @@ chrome.commands.onCommand.addListener(async (command) => {
 
   try {
     // Get the active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
 
     if (!tab?.id) {
       logger.log("No active tab found");
@@ -496,6 +527,33 @@ chrome.commands.onCommand.addListener(async (command) => {
         }
       } catch (error) {
         logger.error("Failed to send submitFromClipboard:", error);
+      }
+    } else if (command === "autosubmit") {
+      // Get the most recent history entry (keyed by source image ID)
+      const entry = await getMostRecentHistoryEntry(sourceImageId);
+
+      if (!entry) {
+        logger.log("No history entries for source image:", sourceImageId);
+        return;
+      }
+
+      logger.log(
+        "Autosubmit starting with:",
+        entry.text.substring(0, 50) + "...",
+      );
+
+      // Send autosubmit:start to the content script with default retries
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: "autosubmit:start",
+          maxRetries: 10,
+        });
+
+        if (result && !result.success) {
+          logger.error("Autosubmit start failed:", result.error);
+        }
+      } catch (error) {
+        logger.error("Failed to send autosubmit:start:", error);
       }
     }
   } catch (error) {

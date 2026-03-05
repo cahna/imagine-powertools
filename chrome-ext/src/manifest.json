@@ -55,6 +55,9 @@
     },
     "download-video": {
       "description": "Download the current video"
+    },
+    "autosubmit": {
+      "description": "Autosubmit most recent prompt with retries"
     }
   },
   "action": {
@@ -80,9 +83,6 @@
       "run_at": "document_idle"
     }
   ],
-  "permissions": [
-    "storage",
-    "activeTab"
-  ],
+  "permissions": ["storage", "activeTab"],
   "host_permissions": []
 }

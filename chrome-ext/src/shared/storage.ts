@@ -29,7 +29,10 @@ export async function getPostHistory(postId: string): Promise<HistoryEntry[]> {
   return db.getEntries(postId);
 }
 
-export async function saveToPostHistory(postId: string, text: string): Promise<void> {
+export async function saveToPostHistory(
+  postId: string,
+  text: string,
+): Promise<void> {
   const entries = await db.getEntries(postId);
 
   // Check if this exact text already exists
@@ -52,7 +55,10 @@ export async function saveToPostHistory(postId: string, text: string): Promise<v
   await db.setEntries(postId, entries);
 }
 
-export async function deleteFromPostHistory(postId: string, timestamp: number): Promise<void> {
+export async function deleteFromPostHistory(
+  postId: string,
+  timestamp: number,
+): Promise<void> {
   const entries = await db.getEntries(postId);
   const filtered = entries.filter((entry) => entry.timestamp !== timestamp);
   await db.setEntries(postId, filtered);
@@ -90,7 +96,7 @@ export function validatePostHistory(data: unknown): data is PostHistory {
 
 export function mergeHistories(
   existing: PostHistory,
-  incoming: PostHistory
+  incoming: PostHistory,
 ): {
   merged: PostHistory;
   addedCount: number;

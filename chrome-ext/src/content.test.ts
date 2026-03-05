@@ -76,7 +76,7 @@ describe("clickVideoOption", () => {
       `;
 
       const btn6s = document.querySelector(
-        'button[role="radio"]'
+        'button[role="radio"]',
       ) as HTMLButtonElement;
       btn6s.addEventListener("click", clickHandler);
 
@@ -96,7 +96,7 @@ describe("clickVideoOption", () => {
       `;
 
       const btn10s = document.querySelectorAll(
-        'button[role="radio"]'
+        'button[role="radio"]',
       )[1] as HTMLButtonElement;
       btn10s.addEventListener("click", clickHandler);
 
@@ -118,7 +118,7 @@ describe("clickVideoOption", () => {
       `;
 
       const btn480p = document.querySelector(
-        'button[role="radio"]'
+        'button[role="radio"]',
       ) as HTMLButtonElement;
       btn480p.addEventListener("click", clickHandler);
 
@@ -138,7 +138,7 @@ describe("clickVideoOption", () => {
       `;
 
       const btn720p = document.querySelectorAll(
-        'button[role="radio"]'
+        'button[role="radio"]',
       )[1] as HTMLButtonElement;
       btn720p.addEventListener("click", clickHandler);
 
@@ -266,7 +266,7 @@ describe("fillAndSubmitVideo", () => {
     `;
 
     const btn = document.querySelector(
-      'button[aria-label="Make video"]'
+      'button[aria-label="Make video"]',
     ) as HTMLButtonElement;
     btn.addEventListener("click", clickHandler);
 
@@ -276,7 +276,7 @@ describe("fillAndSubmitVideo", () => {
     expect(document.execCommand).toHaveBeenCalledWith(
       "insertText",
       false,
-      "test prompt"
+      "test prompt",
     );
   });
 

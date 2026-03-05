@@ -142,7 +142,12 @@ if (isWatch) {
     outfile: join(distDir, "data/data.js"),
   });
 
-  await Promise.all([bgCtx.watch(), contentCtx.watch(), popupCtx.watch(), dataCtx.watch()]);
+  await Promise.all([
+    bgCtx.watch(),
+    contentCtx.watch(),
+    popupCtx.watch(),
+    dataCtx.watch(),
+  ]);
 
   // Watch static files (CSS, HTML, manifest)
   const staticFiles = [
@@ -156,7 +161,9 @@ if (isWatch) {
   for (const file of staticFiles) {
     watch(file, () => {
       copyStaticFiles();
-      console.log(`Static file changed, copied at ${new Date().toLocaleTimeString()}`);
+      console.log(
+        `Static file changed, copied at ${new Date().toLocaleTimeString()}`,
+      );
     });
   }
 } else {

@@ -32,7 +32,9 @@ const elements = {
   promptsPlaceholder: document.getElementById("prompts-placeholder"),
   promptsContent: document.getElementById("prompts-content"),
   selectedSourceTitle: document.getElementById("selected-source-title"),
-  selectedSourceLink: document.getElementById("selected-source-link") as HTMLAnchorElement,
+  selectedSourceLink: document.getElementById(
+    "selected-source-link",
+  ) as HTMLAnchorElement,
   promptCount: document.getElementById("prompt-count"),
   promptsList: document.getElementById("prompts-list"),
   addPromptBtn: document.getElementById("add-prompt-btn"),
@@ -52,7 +54,9 @@ const elements = {
   // Modal
   modal: document.getElementById("edit-modal"),
   modalTitle: document.getElementById("modal-title"),
-  modalTextarea: document.getElementById("modal-textarea") as HTMLTextAreaElement,
+  modalTextarea: document.getElementById(
+    "modal-textarea",
+  ) as HTMLTextAreaElement,
   modalClose: document.getElementById("modal-close"),
   modalCancel: document.getElementById("modal-cancel"),
   modalSave: document.getElementById("modal-save"),
@@ -76,7 +80,7 @@ function updateStats(): void {
   const postCount = Object.keys(currentHistory).length;
   const entryCount = Object.values(currentHistory).reduce(
     (sum, entries) => sum + entries.length,
-    0
+    0,
   );
 
   elements.stats.innerHTML = `
@@ -101,8 +105,8 @@ function renderSourcesList(): void {
         ([id, prompts]) =>
           id.toLowerCase().includes(searchQuery.toLowerCase()) ||
           prompts.some((p) =>
-            p.text.toLowerCase().includes(searchQuery.toLowerCase())
-          )
+            p.text.toLowerCase().includes(searchQuery.toLowerCase()),
+          ),
       )
     : entries;
 
@@ -127,7 +131,7 @@ function renderSourcesList(): void {
   elements.sourcesList.innerHTML = filtered
     .map(([id, prompts]) => {
       const latestPrompt = prompts.reduce((a, b) =>
-        a.timestamp > b.timestamp ? a : b
+        a.timestamp > b.timestamp ? a : b,
       );
       const isActive = id === selectedSourceId;
 
@@ -202,15 +206,14 @@ function renderPromptsList(): void {
   const sorted = [...prompts].sort((a, b) => b.timestamp - a.timestamp);
 
   elements.promptsList.innerHTML = sorted
-    .map(
-      (prompt) => {
-        const count = prompt.submitCount || 1;
-        return `
+    .map((prompt) => {
+      const count = prompt.submitCount || 1;
+      return `
       <li class="prompt-item" data-timestamp="${prompt.timestamp}">
         <div class="prompt-text">${escapeHtml(prompt.text)}</div>
         <div class="prompt-meta">
           <span class="prompt-time">${formatDate(prompt.timestamp)}</span>
-          <span class="submit-count" title="Submitted ${count} time${count !== 1 ? 's' : ''}">×${count}</span>
+          <span class="submit-count" title="Submitted ${count} time${count !== 1 ? "s" : ""}">×${count}</span>
           <div class="prompt-actions">
             <button class="btn btn-ghost edit-prompt-btn" title="Edit">Edit</button>
             <button class="btn btn-ghost danger delete-prompt-btn" title="Delete">Delete</button>
@@ -218,8 +221,7 @@ function renderPromptsList(): void {
         </div>
       </li>
     `;
-      }
-    )
+    })
     .join("");
 
   // Add event handlers
@@ -332,7 +334,7 @@ async function deletePrompt(timestamp: number): Promise<void> {
 
   const prompts = currentHistory[selectedSourceId];
   currentHistory[selectedSourceId] = prompts.filter(
-    (p) => p.timestamp !== timestamp
+    (p) => p.timestamp !== timestamp,
   );
 
   // Remove source if no prompts left
@@ -354,7 +356,7 @@ async function deleteSource(): Promise<void> {
   const prompts = currentHistory[selectedSourceId] || [];
   if (
     !confirm(
-      `Delete this source and all ${prompts.length} prompt${prompts.length !== 1 ? "s" : ""}?`
+      `Delete this source and all ${prompts.length} prompt${prompts.length !== 1 ? "s" : ""}?`,
     )
   ) {
     return;
@@ -470,7 +472,7 @@ async function init(): Promise<void> {
 
       const { merged, addedCount, skippedCount } = mergeHistories(
         currentHistory,
-        parsed
+        parsed,
       );
 
       await bulkImportHistory(merged);
@@ -478,7 +480,7 @@ async function init(): Promise<void> {
 
       showStatus(
         `Added ${addedCount} source(s), skipped ${skippedCount} existing.`,
-        false
+        false,
       );
 
       updateStats();
@@ -489,8 +491,10 @@ async function init(): Promise<void> {
       }
     } catch (error) {
       showStatus(
-        error instanceof SyntaxError ? "Invalid JSON format." : "Import failed.",
-        true
+        error instanceof SyntaxError
+          ? "Invalid JSON format."
+          : "Import failed.",
+        true,
       );
     }
   });
@@ -513,7 +517,7 @@ async function init(): Promise<void> {
 
       const { merged, addedCount, skippedCount } = mergeHistories(
         currentHistory,
-        parsed
+        parsed,
       );
 
       await bulkImportHistory(merged);
@@ -521,7 +525,7 @@ async function init(): Promise<void> {
 
       showStatus(
         `Added ${addedCount} source(s), skipped ${skippedCount} existing.`,
-        false
+        false,
       );
 
       updateStats();
@@ -532,17 +536,17 @@ async function init(): Promise<void> {
       }
     } catch (error) {
       showStatus(
-        error instanceof SyntaxError ? "Invalid JSON format." : "Import failed.",
-        true
+        error instanceof SyntaxError
+          ? "Invalid JSON format."
+          : "Import failed.",
+        true,
       );
     }
   });
 
   // Clear all
   elements.clearBtn?.addEventListener("click", async () => {
-    if (
-      !confirm("Delete ALL data? This cannot be undone.")
-    ) {
+    if (!confirm("Delete ALL data? This cannot be undone.")) {
       return;
     }
 

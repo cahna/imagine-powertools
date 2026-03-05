@@ -29,7 +29,10 @@ export function detectMode(): Mode {
 }
 
 // Wait for an element to appear in the DOM
-export function waitForElement(selector: string, timeout = 2000): Promise<Element | null> {
+export function waitForElement(
+  selector: string,
+  timeout = 2000,
+): Promise<Element | null> {
   return new Promise((resolve) => {
     // Check if element already exists
     const existing = document.querySelector(selector);
@@ -61,7 +64,9 @@ export function waitForElement(selector: string, timeout = 2000): Promise<Elemen
 
 // Find a menu item by its text content
 export function findMenuItemByText(text: string): Element | null {
-  const menuItems = document.querySelectorAll('div[role="menuitem"][data-radix-collection-item]');
+  const menuItems = document.querySelectorAll(
+    'div[role="menuitem"][data-radix-collection-item]',
+  );
   for (const item of menuItems) {
     if (item.textContent?.includes(text)) {
       return item;
@@ -71,11 +76,15 @@ export function findMenuItemByText(text: string): Element | null {
 }
 
 // Set value on a React-controlled input/textarea
-export function setReactInputValue(element: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+export function setReactInputValue(
+  element: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+): void {
   // Get the native setter from the prototype
-  const prototype = element instanceof HTMLTextAreaElement
-    ? HTMLTextAreaElement.prototype
-    : HTMLInputElement.prototype;
+  const prototype =
+    element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
 
   const nativeSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
 
@@ -108,10 +117,13 @@ export function setTiptapContent(element: HTMLElement, text: string): void {
 
 // Fill the video prompt and click the Make video button
 // Supports both old UI (textarea) and new UI (tiptap contenteditable)
-export function fillAndSubmitVideo(text: string): { success: boolean; error?: string } {
+export function fillAndSubmitVideo(text: string): {
+  success: boolean;
+  error?: string;
+} {
   // Try new UI first: contenteditable div with tiptap ProseMirror
   const contentEditable = document.querySelector<HTMLDivElement>(
-    'div.tiptap.ProseMirror[contenteditable="true"]'
+    'div.tiptap.ProseMirror[contenteditable="true"]',
   );
 
   if (contentEditable) {
@@ -119,7 +131,7 @@ export function fillAndSubmitVideo(text: string): { success: boolean; error?: st
   } else {
     // Fallback to old UI: textarea
     const textarea = document.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Make a video"]'
+      'textarea[aria-label="Make a video"]',
     );
 
     if (!textarea) {
@@ -131,7 +143,7 @@ export function fillAndSubmitVideo(text: string): { success: boolean; error?: st
 
   // Find and click the Make video button (same aria-label in both UIs)
   const makeVideoBtn = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="Make video"]'
+    'button[aria-label="Make video"]',
   );
 
   if (!makeVideoBtn) {
@@ -147,8 +159,12 @@ export function fillAndSubmitVideo(text: string): { success: boolean; error?: st
 }
 
 // Click a mood option from the Settings dropdown menu
-export async function clickMoodOptionFromMenu(option: string): Promise<{ success: boolean; error?: string }> {
-  const settingsBtn = document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]');
+export async function clickMoodOptionFromMenu(
+  option: string,
+): Promise<{ success: boolean; error?: string }> {
+  const settingsBtn = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Settings"]',
+  );
 
   if (!settingsBtn) {
     return { success: false, error: "Settings button not found" };
@@ -161,26 +177,32 @@ export async function clickMoodOptionFromMenu(option: string): Promise<{ success
     settingsBtn.focus();
 
     // Dispatch pointer events (Radix UI uses these)
-    settingsBtn.dispatchEvent(new PointerEvent("pointerdown", {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      pointerType: "mouse",
-    }));
-    settingsBtn.dispatchEvent(new PointerEvent("pointerup", {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      pointerType: "mouse",
-    }));
-    settingsBtn.dispatchEvent(new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-    }));
+    settingsBtn.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        pointerType: "mouse",
+      }),
+    );
+    settingsBtn.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        pointerType: "mouse",
+      }),
+    );
+    settingsBtn.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+      }),
+    );
 
     // Wait for menu to appear
-    const menuContent = await waitForElement('[data-radix-menu-content]', 1000);
+    const menuContent = await waitForElement("[data-radix-menu-content]", 1000);
     if (!menuContent) {
       return { success: false, error: "Settings menu did not open" };
     }
@@ -194,7 +216,10 @@ export async function clickMoodOptionFromMenu(option: string): Promise<{ success
   const targetElement = findMenuItemByText(moodText);
 
   if (!targetElement) {
-    return { success: false, error: `Mood option "${option}" not found in menu` };
+    return {
+      success: false,
+      error: `Mood option "${option}" not found in menu`,
+    };
   }
 
   (targetElement as HTMLElement).click();
@@ -203,39 +228,56 @@ export async function clickMoodOptionFromMenu(option: string): Promise<{ success
 
 // Click a video option (duration, resolution, or mood)
 // Handles collapsed form state by expanding it first for duration/resolution
-export async function clickVideoOption(option: string): Promise<{ success: boolean; error?: string }> {
+export async function clickVideoOption(
+  option: string,
+): Promise<{ success: boolean; error?: string }> {
   // Duration and resolution options use radiogroups
   if (["6s", "10s", "480p", "720p"].includes(option)) {
     const isResolution = ["480p", "720p"].includes(option);
-    const radioGroupLabel = isResolution ? "Video resolution" : "Video duration";
+    const radioGroupLabel = isResolution
+      ? "Video resolution"
+      : "Video duration";
 
     // Check if radiogroup is already visible
-    let radioGroup = document.querySelector(`[role="radiogroup"][aria-label="${radioGroupLabel}"]`);
+    let radioGroup = document.querySelector(
+      `[role="radiogroup"][aria-label="${radioGroupLabel}"]`,
+    );
 
     // If not visible, form is collapsed - click the text input to expand it
     if (!radioGroup) {
       const tiptapEditor = document.querySelector<HTMLElement>(
-        'div.tiptap.ProseMirror[contenteditable="true"]'
+        'div.tiptap.ProseMirror[contenteditable="true"]',
       );
 
       if (!tiptapEditor) {
-        return { success: false, error: "Could not find text input to expand form" };
+        return {
+          success: false,
+          error: "Could not find text input to expand form",
+        };
       }
 
       // Focus the editor to trigger form expansion
       tiptapEditor.focus();
 
       // Wait for radiogroup to appear (form expansion animation)
-      const appeared = await waitForElement(`[role="radiogroup"][aria-label="${radioGroupLabel}"]`, 1000);
+      const appeared = await waitForElement(
+        `[role="radiogroup"][aria-label="${radioGroupLabel}"]`,
+        1000,
+      );
       if (!appeared) {
-        return { success: false, error: "Form did not expand - radiogroup not found" };
+        return {
+          success: false,
+          error: "Form did not expand - radiogroup not found",
+        };
       }
 
       radioGroup = appeared;
     }
 
     // Find the radio button by checking for the option text in nested spans
-    const buttons = radioGroup.querySelectorAll<HTMLButtonElement>('button[role="radio"]');
+    const buttons = radioGroup.querySelectorAll<HTMLButtonElement>(
+      'button[role="radio"]',
+    );
     for (const btn of buttons) {
       const spans = btn.querySelectorAll("span");
       for (const span of spans) {
@@ -246,7 +288,10 @@ export async function clickVideoOption(option: string): Promise<{ success: boole
       }
     }
 
-    return { success: false, error: `Option "${option}" not found in radiogroup` };
+    return {
+      success: false,
+      error: `Option "${option}" not found in radiogroup`,
+    };
   }
 
   // Mood options require opening the Settings menu
@@ -273,7 +318,7 @@ export function detectGenerationOutcome(): GenerationOutcome {
   // Check for rate limit toast first (highest priority - stop immediately)
   // Note: aria-label may include keyboard shortcut hint (e.g., "Notifications alt+T")
   const notifications = document.querySelector(
-    'section[aria-label^="Notifications"]'
+    'section[aria-label^="Notifications"]',
   );
   if (notifications?.textContent?.includes("Rate limit reached")) {
     logger.log("Detected: rate_limited");
@@ -291,15 +336,16 @@ export function detectGenerationOutcome(): GenerationOutcome {
 
   // Alternative: Cancel Video button indicates generation in progress
   const cancelBtn = Array.from(document.querySelectorAll("button")).find(
-    (btn) => btn.textContent?.includes("Cancel Video")
+    (btn) => btn.textContent?.includes("Cancel Video"),
   );
   if (cancelBtn) {
     return { type: "generating" };
   }
 
   // Check for moderated result
-  const moderatedImg =
-    document.querySelector<HTMLImageElement>('img[alt="Moderated"]');
+  const moderatedImg = document.querySelector<HTMLImageElement>(
+    'img[alt="Moderated"]',
+  );
   if (moderatedImg) {
     logger.log("Detected: moderated");
     return { type: "moderated" };
@@ -321,7 +367,7 @@ export function detectGenerationOutcome(): GenerationOutcome {
 export function waitForOutcome(
   targetTypes: GenerationOutcome["type"][],
   timeout: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<GenerationOutcome | null> {
   return new Promise((resolve) => {
     // Check if already aborted
