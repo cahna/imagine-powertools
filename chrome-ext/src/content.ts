@@ -1,4 +1,4 @@
-// Content script for Grok Imagine Power Tools
+// Content script for ImaginePowerTools
 
 import {
   type Mode,

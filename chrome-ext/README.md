@@ -1,6 +1,6 @@
 # ImaginePowerTools
 
-A Chrome extension that adds power-user features to [Grok Imagine](https://grok.com/imagine), including keyboard shortcuts and prompt history management.
+A Chrome extension that adds power-user features to [Imagine](https://grok.com/imagine), including keyboard shortcuts and prompt history management.
 
 ## Features
 

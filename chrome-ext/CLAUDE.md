@@ -14,7 +14,7 @@ After building, load the `dist/` folder as an unpacked extension in `chrome://ex
 
 ## Architecture
 
-Chrome Manifest V3 extension for adding power-user features to Grok Imagine (grok.com/imagine).
+Chrome Manifest V3 extension for adding power-user features to Imagine (grok.com/imagine).
 
 ### Core Components
 

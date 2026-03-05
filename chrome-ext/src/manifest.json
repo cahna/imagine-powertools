@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Grok Imagine Power Tools",
-  "description": "Power user features for Grok Imagine",
+  "name": "ImaginePowerTools",
+  "description": "Power user features for Imagine",
   "version": "1.0.0",
   "commands": {
     "resubmit-last": {

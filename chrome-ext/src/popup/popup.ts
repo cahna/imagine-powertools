@@ -1,4 +1,4 @@
-// Popup script for Grok Imagine Power Tools
+// Popup script for ImaginePowerTools
 
 import {
   HistoryEntry,
@@ -160,14 +160,14 @@ function generateShortcutsScript(): string {
   for (const card of cards) {
     const title = card.querySelector('.card-title span');
     console.log('Card title:', title?.textContent?.trim());
-    if (title && title.textContent.includes('Grok Imagine Power Tools')) {
+    if (title && title.textContent.includes('ImaginePowerTools')) {
       ourCard = card;
       break;
     }
   }
 
   if (!ourCard) {
-    console.error('Could not find Grok Imagine Power Tools extension card');
+    console.error('Could not find ImaginePowerTools extension card');
     return;
   }
 
