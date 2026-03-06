@@ -121,6 +121,36 @@ Tests verify DOM interactions like clicking video options, filling prompts, and 
 2. Import and use the constant in both sender and receiver files
 3. Update this documentation if adding a new message type category
 
+### Adding New Keyboard Commands
+
+Chrome limits extensions to 4 commands with `suggested_key` in manifest.json. This extension uses a workaround:
+
+1. **manifest.json**: Add the command with only a `description` (no `suggested_key`):
+   ```json
+   "my-command": {
+     "description": "Description of what this command does"
+   }
+   ```
+
+2. **background.ts**: Add command routing in `chrome.commands.onCommand.addListener()` to forward to content script
+
+3. **popup/popup.ts**: Add the hotkey mapping to the `HOTKEYS` object in `generateShortcutsScript()`:
+   ```typescript
+   const HOTKEYS = {
+     // ... existing mappings ...
+     'my-command': 'M',  // Will become Alt+Shift+M
+   };
+   ```
+
+4. **content.ts / content.core.ts**: Implement the handler
+
+Users configure shortcuts by:
+1. Opening popup on `chrome://extensions/shortcuts` page
+2. Clicking "Copy Setup Script" button
+3. Pasting in DevTools console (F12)
+
+This script automates setting all shortcuts to `Alt+Shift+<key>` at once.
+
 ### Pre-commit Checklist
 
 - [ ] Add tests for new DOM interactions in `content.test.ts`

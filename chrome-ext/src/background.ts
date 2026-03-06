@@ -481,6 +481,51 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
+  // Carousel navigation commands
+  if (command === "carousel-prev" || command === "carousel-next") {
+    logger.log(
+      `Carousel ${command === "carousel-prev" ? "prev" : "next"} command triggered`,
+    );
+
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tab?.id) {
+        logger.log("No active tab found");
+        return;
+      }
+
+      const url = tab.url || "";
+      if (!url.startsWith("https://grok.com/imagine")) {
+        logger.log("Not on grok.com/imagine page");
+        return;
+      }
+
+      const messageType =
+        command === "carousel-prev"
+          ? PromptMessageType.CAROUSEL_PREV
+          : PromptMessageType.CAROUSEL_NEXT;
+
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: messageType,
+        });
+
+        if (result && !result.success) {
+          logger.error("Carousel navigation failed:", result.error);
+        }
+      } catch (error) {
+        logger.error("Failed to send carousel navigation:", error);
+      }
+    } catch (error) {
+      logger.error("Carousel command error:", error);
+    }
+    return;
+  }
+
   if (
     command !== "resubmit-last" &&
     command !== "submit-clipboard" &&

@@ -9,7 +9,11 @@ export type Mode = "favorites" | "results" | "post" | "none";
 export function detectMode(): Mode {
   const pathname = window.location.pathname;
 
-  if (pathname === "/imagine/favorites") {
+  if (
+    pathname === "/imagine/favorites" ||
+    pathname === "/imagine/saved" ||
+    pathname.startsWith("/imagine/saved/")
+  ) {
     return "favorites";
   }
 
@@ -390,6 +394,9 @@ export async function clickExtendVideoFromMenu(): Promise<{
   }
   (menuItem as HTMLElement).click();
 
+  // 6. Wait for UI animation to complete
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
   return { success: true };
 }
 
@@ -509,4 +516,53 @@ export function waitForOutcome(
       characterData: true,
     });
   });
+}
+
+// =============================================================================
+// Video Carousel Navigation
+// =============================================================================
+
+/** Navigates up/down through the video carousel on post pages. */
+export function navigateVideoCarousel(direction: "prev" | "next"): {
+  success: boolean;
+  error?: string;
+} {
+  // Find the scrollable carousel container
+  const container = document.querySelector("div.snap-y.snap-mandatory");
+  if (!container) {
+    return { success: false, error: "Carousel not found" };
+  }
+
+  // Find all thumbnail buttons
+  const buttons = Array.from(
+    container.querySelectorAll("button.snap-center"),
+  ) as HTMLButtonElement[];
+  if (buttons.length === 0) {
+    return { success: false, error: "No thumbnails found" };
+  }
+
+  // Find currently selected button (has ring-fg-primary class)
+  const currentIndex = buttons.findIndex((btn) =>
+    btn.classList.contains("ring-fg-primary"),
+  );
+
+  // Calculate target index (no wrapping - stop at boundaries)
+  let targetIndex: number;
+  if (currentIndex === -1) {
+    targetIndex = 0; // Default to first if none selected
+  } else if (direction === "next") {
+    if (currentIndex >= buttons.length - 1) {
+      return { success: true }; // Already at last, do nothing
+    }
+    targetIndex = currentIndex + 1;
+  } else {
+    if (currentIndex <= 0) {
+      return { success: true }; // Already at first, do nothing
+    }
+    targetIndex = currentIndex - 1;
+  }
+
+  // Click the target button
+  buttons[targetIndex].click();
+  return { success: true };
 }

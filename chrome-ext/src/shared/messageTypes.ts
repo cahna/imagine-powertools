@@ -43,6 +43,10 @@ export const PromptMessageType = {
   CLICK_DOWNLOAD: "clickDownload",
   /** Extend the current video */
   EXTEND_VIDEO: "extendVideo",
+  /** Navigate to previous video in carousel */
+  CAROUSEL_PREV: "carouselPrev",
+  /** Navigate to next video in carousel */
+  CAROUSEL_NEXT: "carouselNext",
 } as const;
 
 export type PromptMessageType =

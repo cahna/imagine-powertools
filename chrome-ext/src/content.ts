@@ -13,6 +13,7 @@ import {
   isInExtendMode,
   clickMakeVideoButton,
   clickExtendVideoFromMenu,
+  navigateVideoCarousel,
 } from "./content.core";
 import { logger } from "./shared/logger";
 import {
@@ -599,6 +600,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
+  if (message.type === PromptMessageType.CAROUSEL_PREV) {
+    const result = navigateVideoCarousel("prev");
+    sendResponse(result);
+    return true;
+  }
+
+  if (message.type === PromptMessageType.CAROUSEL_NEXT) {
+    const result = navigateVideoCarousel("next");
+    sendResponse(result);
+    return true;
+  }
+
   // Autosubmit message handlers
   if (message.type === AutosubmitMessageType.START) {
     const { maxRetries } = message;
@@ -670,10 +683,12 @@ function getImageIdFromCard(card: Element): string | null {
   if (img) {
     // Check src first for URL-based patterns
     if (img.src) {
+      logger.log("Checking img src:", img.src);
       // Pattern: imagine-public/images/{uuid}.jpg (standard images)
       const imgMatch = img.src.match(
         /imagine-public\/images\/([0-9a-f-]+)\.jpg/i,
       );
+      logger.log("imgMatch result:", imgMatch);
       if (imgMatch && imgMatch[1] && uuidPattern.test(imgMatch[1])) {
         return imgMatch[1];
       }
@@ -687,6 +702,17 @@ function getImageIdFromCard(card: Element): string | null {
         uuidPattern.test(previewMatch[1])
       ) {
         return previewMatch[1];
+      }
+      // Pattern: imagine-public.x.ai/imagine-public/share-videos/{uuid}_thumbnail.jpg
+      const shareVideoThumbMatch = img.src.match(
+        /share-videos\/([0-9a-f-]+)_thumbnail\.jpg/i,
+      );
+      if (
+        shareVideoThumbMatch &&
+        shareVideoThumbMatch[1] &&
+        uuidPattern.test(shareVideoThumbMatch[1])
+      ) {
+        return shareVideoThumbMatch[1];
       }
     }
 
@@ -741,11 +767,14 @@ function setupFavoritesClickHandler(): void {
       }
 
       const target = e.target as Element;
+      logger.log("Alt+Shift+Click on:", target.tagName, target.className);
       const card = findMasonryCard(target);
 
       if (!card) {
+        logger.log("No card found for target");
         return;
       }
+      logger.log("Found card:", card.className);
 
       // Prevent default click behavior
       e.preventDefault();
@@ -753,6 +782,7 @@ function setupFavoritesClickHandler(): void {
 
       // Try direct DOM extraction first (works for favorites and cached images)
       let imageId = getImageIdFromCard(card);
+      logger.log("getImageIdFromCard result:", imageId);
 
       // Fallback: simulate click and capture navigation URL (for fresh result images)
       if (!imageId) {

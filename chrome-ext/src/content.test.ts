@@ -8,6 +8,7 @@ import {
   isInExtendMode,
   clickMakeVideoButton,
   clickExtendVideoFromMenu,
+  navigateVideoCarousel,
 } from "./content.core";
 
 describe("detectMode", () => {
@@ -704,5 +705,128 @@ describe("clickExtendVideoFromMenu", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("Extend video menu item not found");
+  });
+});
+
+describe("navigateVideoCarousel", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("returns error when carousel container not found", () => {
+    document.body.innerHTML = `<div>No carousel here</div>`;
+
+    const result = navigateVideoCarousel("next");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Carousel not found");
+  });
+
+  it("returns error when no thumbnail buttons found", () => {
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <div>Empty carousel</div>
+      </div>
+    `;
+
+    const result = navigateVideoCarousel("next");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("No thumbnails found");
+  });
+
+  it("clicks next button when navigating next", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center ring-fg-primary">Thumbnail 1</button>
+        <button class="snap-center">Thumbnail 2</button>
+        <button class="snap-center">Thumbnail 3</button>
+      </div>
+    `;
+
+    const buttons = document.querySelectorAll("button.snap-center");
+    buttons[1].addEventListener("click", clickHandler);
+
+    const result = navigateVideoCarousel("next");
+
+    expect(result.success).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
+  });
+
+  it("clicks previous button when navigating prev", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center">Thumbnail 1</button>
+        <button class="snap-center ring-fg-primary">Thumbnail 2</button>
+        <button class="snap-center">Thumbnail 3</button>
+      </div>
+    `;
+
+    const buttons = document.querySelectorAll("button.snap-center");
+    buttons[0].addEventListener("click", clickHandler);
+
+    const result = navigateVideoCarousel("prev");
+
+    expect(result.success).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
+  });
+
+  it("does nothing when already at last and navigating next", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center">Thumbnail 1</button>
+        <button class="snap-center">Thumbnail 2</button>
+        <button class="snap-center ring-fg-primary">Thumbnail 3</button>
+      </div>
+    `;
+
+    const buttons = document.querySelectorAll("button.snap-center");
+    buttons.forEach((btn) => btn.addEventListener("click", clickHandler));
+
+    const result = navigateVideoCarousel("next");
+
+    expect(result.success).toBe(true);
+    expect(clickHandler).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when already at first and navigating prev", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center ring-fg-primary">Thumbnail 1</button>
+        <button class="snap-center">Thumbnail 2</button>
+        <button class="snap-center">Thumbnail 3</button>
+      </div>
+    `;
+
+    const buttons = document.querySelectorAll("button.snap-center");
+    buttons.forEach((btn) => btn.addEventListener("click", clickHandler));
+
+    const result = navigateVideoCarousel("prev");
+
+    expect(result.success).toBe(true);
+    expect(clickHandler).not.toHaveBeenCalled();
+  });
+
+  it("defaults to first button when no selection found", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center">Thumbnail 1</button>
+        <button class="snap-center">Thumbnail 2</button>
+        <button class="snap-center">Thumbnail 3</button>
+      </div>
+    `;
+
+    const buttons = document.querySelectorAll("button.snap-center");
+    buttons[0].addEventListener("click", clickHandler);
+
+    const result = navigateVideoCarousel("next");
+
+    expect(result.success).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
   });
 });

@@ -340,7 +340,9 @@ function generateShortcutsScript(): string {
     'video-normal': 'N',
     'download-video': 'D',
     'autosubmit': 'A',
-    'extend-video': 'E'
+    'extend-video': 'E',
+    'carousel-prev': 'K',
+    'carousel-next': 'J'
   };
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
