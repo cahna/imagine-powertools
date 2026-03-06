@@ -339,7 +339,8 @@ function generateShortcutsScript(): string {
     'video-fun': 'F',
     'video-normal': 'N',
     'download-video': 'D',
-    'autosubmit': 'A'
+    'autosubmit': 'A',
+    'extend-video': 'E'
   };
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));

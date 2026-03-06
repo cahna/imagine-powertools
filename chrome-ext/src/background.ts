@@ -442,6 +442,45 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
+  // Extend video command
+  if (command === "extend-video") {
+    logger.log("Extend video command triggered");
+
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tab?.id) {
+        logger.log("No active tab found");
+        return;
+      }
+
+      const url = tab.url || "";
+      if (!url.startsWith("https://grok.com/imagine")) {
+        logger.log("Not on grok.com/imagine page");
+        return;
+      }
+
+      // Send message to content script to extend video
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: PromptMessageType.EXTEND_VIDEO,
+        });
+
+        if (result && !result.success) {
+          logger.error("Extend video failed:", result.error);
+        }
+      } catch (error) {
+        logger.error("Failed to send extendVideo:", error);
+      }
+    } catch (error) {
+      logger.error("Extend video command error:", error);
+    }
+    return;
+  }
+
   if (
     command !== "resubmit-last" &&
     command !== "submit-clipboard" &&

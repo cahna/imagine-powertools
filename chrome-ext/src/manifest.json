@@ -58,6 +58,9 @@
     },
     "autosubmit": {
       "description": "Autosubmit most recent prompt with retries"
+    },
+    "extend-video": {
+      "description": "Extend the current video"
     }
   },
   "action": {

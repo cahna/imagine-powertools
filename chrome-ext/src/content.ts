@@ -9,6 +9,10 @@ import {
   setReactInputValue,
   detectGenerationOutcome,
   waitForOutcome,
+  waitForElement,
+  isInExtendMode,
+  clickMakeVideoButton,
+  clickExtendVideoFromMenu,
 } from "./content.core";
 import { logger } from "./shared/logger";
 import {
@@ -555,6 +559,44 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const result = clickDownloadButton();
     sendResponse(result);
     return true;
+  }
+
+  if (message.type === PromptMessageType.EXTEND_VIDEO) {
+    (async () => {
+      // If already in extend mode, just click Make video
+      if (isInExtendMode()) {
+        logger.log("Already in extend mode, clicking Make video");
+        const result = clickMakeVideoButton();
+        sendResponse(result);
+        return;
+      }
+
+      // Otherwise, open menu and click Extend video
+      logger.log("Opening More options menu to click Extend video");
+      const menuResult = await clickExtendVideoFromMenu();
+      if (!menuResult.success) {
+        sendResponse(menuResult);
+        return;
+      }
+
+      // Wait for form to change to extend mode
+      const exitBtn = await waitForElement(
+        'button[aria-label="Exit extend mode"]',
+        1000,
+      );
+      if (!exitBtn) {
+        sendResponse({ success: false, error: "Extend mode did not activate" });
+        return;
+      }
+
+      // Small delay to let UI settle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Click Make video
+      const submitResult = clickMakeVideoButton();
+      sendResponse(submitResult);
+    })();
+    return true; // Keep channel open for async response
   }
 
   // Autosubmit message handlers

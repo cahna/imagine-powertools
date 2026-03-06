@@ -5,6 +5,9 @@ import {
   fillAndSubmitVideo,
   findMenuItemByText,
   detectGenerationOutcome,
+  isInExtendMode,
+  clickMakeVideoButton,
+  clickExtendVideoFromMenu,
 } from "./content.core";
 
 describe("detectMode", () => {
@@ -540,5 +543,166 @@ describe("detectGenerationOutcome", () => {
 
       expect(detectGenerationOutcome().type).toBe("success");
     });
+  });
+});
+
+describe("isInExtendMode", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("returns true when Exit extend mode button is present", () => {
+    document.body.innerHTML = `
+      <button aria-label="Exit extend mode">Extend Video</button>
+    `;
+
+    expect(isInExtendMode()).toBe(true);
+  });
+
+  it("returns false when Exit extend mode button is not present", () => {
+    document.body.innerHTML = `
+      <button aria-label="Make video">Make video</button>
+    `;
+
+    expect(isInExtendMode()).toBe(false);
+  });
+
+  it("returns false for empty body", () => {
+    document.body.innerHTML = "";
+
+    expect(isInExtendMode()).toBe(false);
+  });
+});
+
+describe("clickMakeVideoButton", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("clicks Make video button and returns success", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <button aria-label="Make video">Make video</button>
+    `;
+
+    const btn = document.querySelector(
+      'button[aria-label="Make video"]',
+    ) as HTMLButtonElement;
+    btn.addEventListener("click", clickHandler);
+
+    const result = clickMakeVideoButton();
+
+    expect(result.success).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
+  });
+
+  it("returns error when Make video button not found", () => {
+    document.body.innerHTML = `
+      <button aria-label="Something else">Button</button>
+    `;
+
+    const result = clickMakeVideoButton();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Make video button not found");
+  });
+});
+
+describe("clickExtendVideoFromMenu", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("returns error when no successful video present", async () => {
+    document.body.innerHTML = `
+      <button aria-label="More options">More</button>
+    `;
+
+    const result = await clickExtendVideoFromMenu();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("No successful video");
+  });
+
+  it("returns error when More options button not found", async () => {
+    document.body.innerHTML = `
+      <video id="sd-video" src="https://example.com/video.mp4"></video>
+    `;
+
+    const result = await clickExtendVideoFromMenu();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("More options button not found");
+  });
+
+  it("opens menu and clicks Extend video when video is present", async () => {
+    const menuItemClicked = vi.fn();
+    document.body.innerHTML = `
+      <video id="sd-video" src="https://example.com/video.mp4"></video>
+      <button aria-label="More options" aria-expanded="false">More</button>
+    `;
+
+    const moreBtn = document.querySelector(
+      'button[aria-label="More options"]',
+    ) as HTMLButtonElement;
+
+    // Simulate menu opening on click
+    moreBtn.addEventListener("click", () => {
+      moreBtn.setAttribute("aria-expanded", "true");
+      const menu = document.createElement("div");
+      menu.setAttribute("data-radix-menu-content", "");
+      menu.innerHTML = `
+        <div role="menuitem" data-radix-collection-item>Delete video</div>
+        <div role="menuitem" data-radix-collection-item>Extend video</div>
+      `;
+      document.body.appendChild(menu);
+
+      // Add click handler to Extend video item after it's in DOM
+      const extendItem = findMenuItemByText("Extend video");
+      if (extendItem) {
+        extendItem.addEventListener("click", menuItemClicked);
+      }
+    });
+
+    const result = await clickExtendVideoFromMenu();
+
+    expect(result.success).toBe(true);
+    expect(menuItemClicked).toHaveBeenCalled();
+  });
+
+  it("clicks Extend video when menu is already open", async () => {
+    const menuItemClicked = vi.fn();
+    document.body.innerHTML = `
+      <video id="sd-video" src="https://example.com/video.mp4"></video>
+      <button aria-label="More options" aria-expanded="true">More</button>
+      <div data-radix-menu-content>
+        <div role="menuitem" data-radix-collection-item>Delete video</div>
+        <div role="menuitem" data-radix-collection-item>Extend video</div>
+      </div>
+    `;
+
+    const extendItem = findMenuItemByText("Extend video");
+    extendItem?.addEventListener("click", menuItemClicked);
+
+    const result = await clickExtendVideoFromMenu();
+
+    expect(result.success).toBe(true);
+    expect(menuItemClicked).toHaveBeenCalled();
+  });
+
+  it("returns error when Extend video menu item not found", async () => {
+    document.body.innerHTML = `
+      <video id="sd-video" src="https://example.com/video.mp4"></video>
+      <button aria-label="More options" aria-expanded="true">More</button>
+      <div data-radix-menu-content>
+        <div role="menuitem" data-radix-collection-item>Delete video</div>
+        <div role="menuitem" data-radix-collection-item>Thumbs up</div>
+      </div>
+    `;
+
+    const result = await clickExtendVideoFromMenu();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Extend video menu item not found");
   });
 });

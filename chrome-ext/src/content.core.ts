@@ -181,7 +181,6 @@ export async function clickMoodOptionFromMenu(
       new PointerEvent("pointerdown", {
         bubbles: true,
         cancelable: true,
-        view: window,
         pointerType: "mouse",
       }),
     );
@@ -189,7 +188,6 @@ export async function clickMoodOptionFromMenu(
       new PointerEvent("pointerup", {
         bubbles: true,
         cancelable: true,
-        view: window,
         pointerType: "mouse",
       }),
     );
@@ -197,7 +195,6 @@ export async function clickMoodOptionFromMenu(
       new MouseEvent("click", {
         bubbles: true,
         cancelable: true,
-        view: window,
       }),
     );
 
@@ -300,6 +297,100 @@ export async function clickVideoOption(
   }
 
   return { success: false, error: `Unknown option: ${option}` };
+}
+
+// =============================================================================
+// Extend Video Helpers
+// =============================================================================
+
+// Check if the UI is currently in "extend video" mode
+export function isInExtendMode(): boolean {
+  const exitBtn = document.querySelector(
+    'button[aria-label="Exit extend mode"]',
+  );
+  return exitBtn !== null;
+}
+
+// Click the Make video button
+export function clickMakeVideoButton(): { success: boolean; error?: string } {
+  const makeBtn = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Make video"]',
+  );
+  if (!makeBtn) {
+    return { success: false, error: "Make video button not found" };
+  }
+  makeBtn.click();
+  return { success: true };
+}
+
+// Open the "More options" menu and click "Extend video"
+export async function clickExtendVideoFromMenu(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  // Import detectGenerationOutcome is already available in this file
+
+  // 1. Check for successful video first
+  const outcome = detectGenerationOutcome();
+  if (outcome.type !== "success") {
+    return {
+      success: false,
+      error: `No successful video (current: ${outcome.type})`,
+    };
+  }
+
+  // 2. Find and click "More options" button
+  const moreOptionsBtn = document.querySelector<HTMLButtonElement>(
+    'button[aria-label="More options"]',
+  );
+  if (!moreOptionsBtn) {
+    return { success: false, error: "More options button not found" };
+  }
+
+  // 3. Check if menu is already open
+  const isOpen = moreOptionsBtn.getAttribute("aria-expanded") === "true";
+
+  if (!isOpen) {
+    // Open menu with pointer events (like clickMoodOptionFromMenu)
+    moreOptionsBtn.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        pointerType: "mouse",
+      }),
+    );
+    moreOptionsBtn.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        cancelable: true,
+        pointerType: "mouse",
+      }),
+    );
+    moreOptionsBtn.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    // 4. Wait for menu to appear
+    const menuContent = await waitForElement("[data-radix-menu-content]", 1000);
+    if (!menuContent) {
+      return { success: false, error: "More options menu did not open" };
+    }
+
+    // Small delay for menu animation
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  // 5. Find and click "Extend video" menuitem
+  const menuItem = findMenuItemByText("Extend video");
+  if (!menuItem) {
+    return { success: false, error: "Extend video menu item not found" };
+  }
+  (menuItem as HTMLElement).click();
+
+  return { success: true };
 }
 
 // =============================================================================

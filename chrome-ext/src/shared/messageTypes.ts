@@ -41,6 +41,8 @@ export const PromptMessageType = {
   CLICK_VIDEO_OPTION: "clickVideoOption",
   /** Click the download button */
   CLICK_DOWNLOAD: "clickDownload",
+  /** Extend the current video */
+  EXTEND_VIDEO: "extendVideo",
 } as const;
 
 export type PromptMessageType =
