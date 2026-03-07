@@ -19,6 +19,7 @@ import { logger } from "./shared/logger";
 import {
   ContentMessageType,
   StorageMessageType,
+  ExtendStorageMessageType,
   PromptMessageType,
   AutosubmitMessageType,
   JobsMessageType,
@@ -72,13 +73,14 @@ function broadcastAutosubmitStatus(): void {
 }
 
 /** Runs the autosubmit loop, retrying submissions until success or max retries reached. */
-async function runAutosubmit(maxRetries: number): Promise<void> {
+async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Promise<void> {
   if (autosubmitState.status === "running") {
     logger.log("Autosubmit already running, ignoring");
     return;
   }
 
-  logger.log(`Starting autosubmit with maxRetries=${maxRetries}`);
+  const logPrefix = isExtend ? "[extend] " : "";
+  logger.log(`${logPrefix}Starting autosubmit with maxRetries=${maxRetries}, isExtend=${isExtend}`);
 
   autosubmitAbortController = new AbortController();
   const signal = autosubmitAbortController.signal;
@@ -86,18 +88,28 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
   // Get prompt text for job registration
   const sourceImageIdForJob = getSourceImageId();
   if (sourceImageIdForJob) {
-    // Get most recent prompt text
+    // Get most recent prompt text from the appropriate history
     const historyForJob = await new Promise<{
       success: boolean;
       entries?: HistoryEntry[];
     }>((resolve) => {
-      chrome.runtime.sendMessage(
-        {
-          type: StorageMessageType.GET_POST_HISTORY,
-          postId: sourceImageIdForJob,
-        },
-        (response) => resolve(response || { success: false }),
-      );
+      if (isExtend) {
+        chrome.runtime.sendMessage(
+          {
+            type: ExtendStorageMessageType.GET_EXTEND_HISTORY,
+            videoId: sourceImageIdForJob,
+          },
+          (response) => resolve(response || { success: false }),
+        );
+      } else {
+        chrome.runtime.sendMessage(
+          {
+            type: StorageMessageType.GET_POST_HISTORY,
+            postId: sourceImageIdForJob,
+          },
+          (response) => resolve(response || { success: false }),
+        );
+      }
     });
 
     const sortedForJob = historyForJob.entries?.sort(
@@ -113,21 +125,26 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
         sourceImageId: sourceImageIdForJob,
         promptText,
         maxRetries,
+        jobType: isExtend ? "extend" : "video",
       })
       .catch(() => {
         // Background script may be unavailable, ignore
       });
   }
 
+  // The expected mode depends on whether we're in extend mode
+  const expectedMode = isExtend ? "post-extend" : "post";
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     if (signal.aborted) {
-      logger.log("Autosubmit aborted");
+      logger.log(`${logPrefix}Autosubmit aborted`);
       break;
     }
 
-    // Check we're still in post mode
-    if (detectMode() !== "post") {
-      logger.log("No longer in post mode, stopping");
+    // Check we're still in the expected mode
+    const currentModeCheck = detectMode();
+    if (currentModeCheck !== expectedMode) {
+      logger.log(`${logPrefix}No longer in ${expectedMode} mode (now ${currentModeCheck}), stopping`);
       autosubmitState = { status: "stopped", reason: "navigated", attempt };
       broadcastAutosubmitStatus();
       break;
@@ -141,30 +158,37 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
       phase: "submitting",
     };
     broadcastAutosubmitStatus();
-    logger.log(`Autosubmit attempt ${attempt}/${maxRetries} - submitting`);
+    logger.log(`${logPrefix}Autosubmit attempt ${attempt}/${maxRetries} - submitting`);
 
-    // Get the source image ID
+    // Get the source image / video ID
     const sourceImageId = getSourceImageId();
     if (!sourceImageId) {
-      logger.error("Could not get source image ID");
+      logger.error(`${logPrefix}Could not get source image ID`);
       autosubmitState = { status: "stopped", reason: "navigated", attempt };
       broadcastAutosubmitStatus();
       break;
     }
 
-    // Get the most recent history entry via background script
+    // Get the most recent history entry via background script (use appropriate history)
     const historyResponse = await new Promise<{
       success: boolean;
       entries?: HistoryEntry[];
     }>((resolve) => {
-      chrome.runtime.sendMessage(
-        { type: StorageMessageType.GET_POST_HISTORY, postId: sourceImageId },
-        (response) => resolve(response || { success: false }),
-      );
+      if (isExtend) {
+        chrome.runtime.sendMessage(
+          { type: ExtendStorageMessageType.GET_EXTEND_HISTORY, videoId: sourceImageId },
+          (response) => resolve(response || { success: false }),
+        );
+      } else {
+        chrome.runtime.sendMessage(
+          { type: StorageMessageType.GET_POST_HISTORY, postId: sourceImageId },
+          (response) => resolve(response || { success: false }),
+        );
+      }
     });
 
     if (!historyResponse.success || !historyResponse.entries?.length) {
-      logger.error("No history entries to resubmit");
+      logger.error(`${logPrefix}No history entries to resubmit`);
       autosubmitState = { status: "stopped", reason: "cancelled", attempt };
       broadcastAutosubmitStatus();
       break;
@@ -175,19 +199,23 @@ async function runAutosubmit(maxRetries: number): Promise<void> {
       (a, b) => b.timestamp - a.timestamp,
     );
     const mostRecent = sorted[0];
-    logger.log(`Resubmitting prompt: "${mostRecent.text.substring(0, 50)}..."`);
+    logger.log(`${logPrefix}Resubmitting prompt: "${mostRecent.text.substring(0, 50)}..."`);
 
     // Fill and submit
     const submitResult = fillAndSubmitVideo(mostRecent.text);
     if (!submitResult.success) {
-      logger.error("Fill and submit failed:", submitResult.error);
+      logger.error(`${logPrefix}Fill and submit failed:`, submitResult.error);
       autosubmitState = { status: "stopped", reason: "cancelled", attempt };
       broadcastAutosubmitStatus();
       break;
     }
 
-    // Increment submission counter
-    await saveToPostHistory(sourceImageId, mostRecent.text);
+    // Increment submission counter (use appropriate history)
+    if (isExtend) {
+      await saveToExtendHistory(sourceImageId, mostRecent.text);
+    } else {
+      await saveToPostHistory(sourceImageId, mostRecent.text);
+    }
 
     // Update state: generating
     autosubmitState = {
@@ -503,13 +531,34 @@ async function saveToPostHistory(postId: string, text: string): Promise<void> {
   });
 }
 
+/** Saves an extend prompt to history via background script. */
+async function saveToExtendHistory(videoId: string, text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: ExtendStorageMessageType.SAVE_TO_EXTEND_HISTORY, videoId, text },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else if (response?.success) {
+          logger.log("[extend] Saved to extend history:", videoId, text.substring(0, 30));
+          resolve();
+        } else {
+          reject(new Error(response?.error || "Unknown error"));
+        }
+      },
+    );
+  });
+}
+
 // Listen for messages from popup or background
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === ContentMessageType.GET_MODE) {
+    // For both post and post-extend modes, return the source image / video ID
+    const isPostMode = currentMode === "post" || currentMode === "post-extend";
     sendResponse({
       mode: currentMode,
-      postId: currentMode === "post" ? getPostId() : null,
-      sourceImageId: currentMode === "post" ? getSourceImageId() : null,
+      postId: isPostMode ? getPostId() : null,
+      sourceImageId: isPostMode ? getSourceImageId() : null,
     });
     return true;
   }
@@ -612,14 +661,114 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  // Extend mode handlers
+  if (message.type === PromptMessageType.EXTEND_FOCUS) {
+    (async () => {
+      logger.log("[extend] EXTEND_FOCUS received");
+
+      // If not in extend mode, enter it first
+      if (!isInExtendMode()) {
+        const result = await clickExtendVideoFromMenu();
+        if (!result.success) {
+          sendResponse(result);
+          return;
+        }
+        // Wait for extend mode UI
+        const exitBtn = await waitForElement(
+          'button[aria-label="Exit extend mode"]',
+          1000,
+        );
+        if (!exitBtn) {
+          sendResponse({ success: false, error: "Extend mode did not activate" });
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+
+      // Focus the prompt input
+      const tiptapEditor = document.querySelector<HTMLElement>(
+        'div.tiptap.ProseMirror[contenteditable="true"]',
+      );
+      if (tiptapEditor) {
+        tiptapEditor.focus();
+        logger.log("[extend] Focused prompt input");
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: "Could not find prompt input" });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === PromptMessageType.FILL_AND_SUBMIT_EXTEND) {
+    (async () => {
+      const videoId = getSourceImageId();
+      if (!videoId) {
+        sendResponse({ success: false, error: "No video ID" });
+        return;
+      }
+
+      logger.log("[extend] FILL_AND_SUBMIT_EXTEND:", message.text.substring(0, 30));
+
+      // Save to extend history
+      try {
+        await saveToExtendHistory(videoId, message.text);
+      } catch (error) {
+        logger.error("[extend] Failed to save to extend history:", error);
+      }
+
+      // Fill and submit
+      const result = fillAndSubmitVideo(message.text);
+      sendResponse(result);
+    })();
+    return true;
+  }
+
+  if (message.type === PromptMessageType.SUBMIT_FROM_CLIPBOARD_EXTEND) {
+    (async () => {
+      const videoId = getSourceImageId();
+      if (!videoId) {
+        sendResponse({ success: false, error: "No video ID" });
+        return;
+      }
+
+      try {
+        const text = await navigator.clipboard.readText();
+        const trimmed = text.trim();
+
+        if (!trimmed) {
+          sendResponse({ success: false, error: "Clipboard is empty" });
+          return;
+        }
+
+        logger.log("[extend] SUBMIT_FROM_CLIPBOARD_EXTEND:", trimmed.substring(0, 30));
+
+        // Save to extend history
+        try {
+          await saveToExtendHistory(videoId, trimmed);
+        } catch (error) {
+          logger.error("[extend] Failed to save to extend history:", error);
+        }
+
+        // Fill and submit
+        const result = fillAndSubmitVideo(trimmed);
+        sendResponse(result);
+      } catch (error) {
+        logger.error("[extend] Clipboard read failed:", error);
+        sendResponse({ success: false, error: "Failed to read clipboard" });
+      }
+    })();
+    return true;
+  }
+
   // Autosubmit message handlers
   if (message.type === AutosubmitMessageType.START) {
-    const { maxRetries } = message;
-    logger.log(`Received autosubmit:start with maxRetries=${maxRetries}`);
+    const { maxRetries, isExtend } = message;
+    logger.log(`Received autosubmit:start with maxRetries=${maxRetries}, isExtend=${isExtend}`);
 
     // Run asynchronously
     (async () => {
-      await runAutosubmit(maxRetries);
+      await runAutosubmit(maxRetries, isExtend || false);
     })();
 
     sendResponse({ success: true });

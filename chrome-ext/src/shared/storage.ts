@@ -13,6 +13,10 @@ export interface PostHistory {
   [postId: string]: HistoryEntry[];
 }
 
+export interface ExtendHistory {
+  [videoId: string]: HistoryEntry[];
+}
+
 // Legacy key - kept for reference but no longer used
 export const STORAGE_KEY = "postHistory";
 
@@ -136,4 +140,107 @@ export async function bulkImportHistory(history: PostHistory): Promise<void> {
 /** Deletes all history data from IndexedDB. */
 export async function clearAllHistory(): Promise<void> {
   await db.clearAll();
+}
+
+// =============================================================================
+// Extend History Functions (keyed by video ID)
+// =============================================================================
+
+/** Retrieves all extend history across all videos as a single object. */
+export async function getAllExtendHistory(): Promise<ExtendHistory> {
+  const records = await db.getAllExtendRecords();
+  const history: ExtendHistory = {};
+  for (const [videoId, entries] of records) {
+    history[videoId] = entries;
+  }
+  return history;
+}
+
+/** Retrieves extend history entries for a specific video ID. */
+export async function getExtendHistory(videoId: string): Promise<HistoryEntry[]> {
+  return db.getExtendEntries(videoId);
+}
+
+/** Saves an extend prompt to history, incrementing submitCount if the same text exists. */
+export async function saveToExtendHistory(
+  videoId: string,
+  text: string,
+): Promise<void> {
+  const entries = await db.getExtendEntries(videoId);
+
+  // Check if this exact text already exists
+  const existingIndex = entries.findIndex((entry) => entry.text === text);
+
+  if (existingIndex !== -1) {
+    // Increment counter and update timestamp
+    const existing = entries[existingIndex];
+    existing.submitCount = (existing.submitCount || 1) + 1;
+    existing.timestamp = Date.now();
+  } else {
+    // Add new entry with submitCount: 1
+    entries.push({
+      text,
+      timestamp: Date.now(),
+      submitCount: 1,
+    });
+  }
+
+  await db.setExtendEntries(videoId, entries);
+}
+
+/** Deletes a specific extend history entry by its timestamp. */
+export async function deleteFromExtendHistory(
+  videoId: string,
+  timestamp: number,
+): Promise<void> {
+  const entries = await db.getExtendEntries(videoId);
+  const filtered = entries.filter((entry) => entry.timestamp !== timestamp);
+  await db.setExtendEntries(videoId, filtered);
+}
+
+/** Type guard that validates imported data conforms to ExtendHistory structure. */
+export function validateExtendHistory(data: unknown): data is ExtendHistory {
+  // Same structure as PostHistory, just different semantic key
+  return validatePostHistory(data);
+}
+
+/** Merges incoming extend history into existing, skipping duplicate video IDs. */
+export function mergeExtendHistories(
+  existing: ExtendHistory,
+  incoming: ExtendHistory,
+): {
+  merged: ExtendHistory;
+  addedCount: number;
+  skippedCount: number;
+} {
+  const merged = { ...existing };
+  let addedCount = 0;
+  let skippedCount = 0;
+
+  for (const videoId in incoming) {
+    if (!merged[videoId]) {
+      merged[videoId] = incoming[videoId];
+      addedCount++;
+    } else {
+      skippedCount++;
+    }
+  }
+
+  return { merged, addedCount, skippedCount };
+}
+
+/** Bulk imports extend history records to IndexedDB in a single transaction. */
+export async function bulkImportExtendHistory(
+  history: ExtendHistory,
+): Promise<void> {
+  const records = new Map<string, HistoryEntry[]>();
+  for (const videoId in history) {
+    records.set(videoId, history[videoId]);
+  }
+  await db.bulkSetExtendRecords(records);
+}
+
+/** Deletes all extend history data from IndexedDB. */
+export async function clearAllExtendHistory(): Promise<void> {
+  await db.clearAllExtend();
 }

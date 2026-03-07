@@ -4,17 +4,21 @@ import {
   HistoryEntry,
   getPostHistory,
   saveToPostHistory,
+  getExtendHistory,
+  saveToExtendHistory,
+  deleteFromExtendHistory,
 } from "./shared/storage";
 import { logger } from "./shared/logger";
 import {
   ContentMessageType,
   StorageMessageType,
+  ExtendStorageMessageType,
   PromptMessageType,
   AutosubmitMessageType,
   JobsMessageType,
 } from "./shared/messageTypes";
 
-type Mode = "favorites" | "results" | "post" | "none";
+type Mode = "favorites" | "results" | "post" | "post-extend" | "none";
 
 // Autosubmit state type (matches content.ts)
 type AutosubmitState =
@@ -47,6 +51,7 @@ interface JobInfo {
   state: AutosubmitState;
   startedAt: number;
   updatedAt: number;
+  jobType: "video" | "extend";
 }
 
 // Video option types
@@ -124,6 +129,50 @@ function cacheInvalidate(postId: string): void {
 }
 
 // =============================================================================
+// LRU Cache for extend history reads
+// =============================================================================
+
+const extendHistoryCache = new Map<string, CacheEntry>();
+
+/** Retrieves cached extend history entries for a video ID, updating access time for LRU. */
+function extendCacheGet(videoId: string): HistoryEntry[] | null {
+  const entry = extendHistoryCache.get(videoId);
+  if (entry) {
+    entry.accessTime = Date.now();
+    return entry.entries;
+  }
+  return null;
+}
+
+/** Stores extend history entries in cache, evicting the oldest entry if cache is full. */
+function extendCacheSet(videoId: string, entries: HistoryEntry[]): void {
+  // Evict oldest entries if cache is full
+  if (extendHistoryCache.size >= CACHE_MAX_SIZE) {
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+    for (const [key, entry] of extendHistoryCache) {
+      if (entry.accessTime < oldestTime) {
+        oldestTime = entry.accessTime;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) {
+      extendHistoryCache.delete(oldestKey);
+    }
+  }
+
+  extendHistoryCache.set(videoId, {
+    entries,
+    accessTime: Date.now(),
+  });
+}
+
+/** Removes a video ID from the extend cache, typically after a write operation. */
+function extendCacheInvalidate(videoId: string): void {
+  extendHistoryCache.delete(videoId);
+}
+
+// =============================================================================
 // Cached storage operations
 // =============================================================================
 
@@ -164,6 +213,60 @@ async function getMostRecentHistoryEntry(
     return sorted[0];
   } catch (error) {
     logger.error("Failed to get history:", error);
+    return null;
+  }
+}
+
+// =============================================================================
+// Cached extend history operations
+// =============================================================================
+
+/** Retrieves extend history with LRU caching for fast repeated access. */
+async function getCachedExtendHistory(videoId: string): Promise<HistoryEntry[]> {
+  const cached = extendCacheGet(videoId);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const entries = await getExtendHistory(videoId);
+  extendCacheSet(videoId, entries);
+  return entries;
+}
+
+/** Saves an extend prompt to history and invalidates the cache entry for consistency. */
+async function cachedSaveToExtendHistory(
+  videoId: string,
+  text: string,
+): Promise<void> {
+  await saveToExtendHistory(videoId, text);
+  extendCacheInvalidate(videoId);
+}
+
+/** Deletes an extend prompt from history and invalidates the cache entry. */
+async function cachedDeleteFromExtendHistory(
+  videoId: string,
+  timestamp: number,
+): Promise<void> {
+  await deleteFromExtendHistory(videoId, timestamp);
+  extendCacheInvalidate(videoId);
+}
+
+/** Retrieves the most recent extend history entry for a video, sorted by timestamp. */
+async function getMostRecentExtendHistoryEntry(
+  videoId: string,
+): Promise<HistoryEntry | null> {
+  try {
+    const entries = await getCachedExtendHistory(videoId);
+
+    if (!entries || entries.length === 0) {
+      return null;
+    }
+
+    // Sort by timestamp descending and return the most recent
+    const sorted = [...entries].sort((a, b) => b.timestamp - a.timestamp);
+    return sorted[0];
+  } catch (error) {
+    logger.error("[extend] Failed to get extend history:", error);
     return null;
   }
 }
@@ -240,11 +343,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep channel open for async response
     }
 
+    // Extend history storage operations
+    case ExtendStorageMessageType.GET_EXTEND_HISTORY: {
+      (async () => {
+        try {
+          const entries = await getCachedExtendHistory(message.videoId);
+          logger.log("[extend] getExtendHistory:", message.videoId, entries.length, "entries");
+          sendResponse({ success: true, entries });
+        } catch (error) {
+          logger.error("[extend] storage:getExtendHistory failed:", error);
+          sendResponse({ success: false, error: String(error) });
+        }
+      })();
+      return true;
+    }
+
+    case ExtendStorageMessageType.SAVE_TO_EXTEND_HISTORY: {
+      (async () => {
+        try {
+          await cachedSaveToExtendHistory(message.videoId, message.text);
+          logger.log("[extend] saveToExtendHistory:", message.videoId, message.text.substring(0, 30));
+          sendResponse({ success: true });
+        } catch (error) {
+          logger.error("[extend] storage:saveToExtendHistory failed:", error);
+          sendResponse({ success: false, error: String(error) });
+        }
+      })();
+      return true;
+    }
+
+    case ExtendStorageMessageType.DELETE_FROM_EXTEND_HISTORY: {
+      (async () => {
+        try {
+          await cachedDeleteFromExtendHistory(message.videoId, message.timestamp);
+          logger.log("[extend] deleteFromExtendHistory:", message.videoId, message.timestamp);
+          sendResponse({ success: true });
+        } catch (error) {
+          logger.error("[extend] storage:deleteFromExtendHistory failed:", error);
+          sendResponse({ success: false, error: String(error) });
+        }
+      })();
+      return true;
+    }
+
     // Job registry operations for the Jobs tab
     case JobsMessageType.REGISTER: {
       const tabId = sender.tab?.id;
       if (tabId !== undefined) {
+        // Prevent concurrent autosubmits on the same tab
+        const existingJob = activeJobs.get(tabId);
+        if (existingJob && existingJob.state.status === "running") {
+          logger.log(`[jobs] Autosubmit already running on tab ${tabId}, ignoring`);
+          sendResponse({ success: false, error: "Autosubmit already running" });
+          break;
+        }
+
         const now = Date.now();
+        const jobType = message.jobType || "video";
         const job: JobInfo = {
           tabId,
           tabTitle: message.tabTitle || sender.tab?.title || "Unknown",
@@ -259,10 +414,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           },
           startedAt: now,
           updatedAt: now,
+          jobType,
         };
         activeJobs.set(tabId, job);
         logger.log(
-          `Job registered for tab ${tabId}:`,
+          `[jobs] ${jobType} job registered for tab ${tabId}:`,
           job.promptText.substring(0, 50),
         );
       }
@@ -526,6 +682,44 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
+  // Extend focus command - enter extend mode and focus prompt input
+  if (command === "extend-focus") {
+    logger.log("[extend] Extend focus command triggered");
+
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tab?.id) {
+        logger.log("[extend] No active tab found");
+        return;
+      }
+
+      const url = tab.url || "";
+      if (!url.startsWith("https://grok.com/imagine")) {
+        logger.log("[extend] Not on grok.com/imagine page");
+        return;
+      }
+
+      try {
+        const result = await chrome.tabs.sendMessage(tab.id, {
+          type: PromptMessageType.EXTEND_FOCUS,
+        });
+
+        if (result && !result.success) {
+          logger.error("[extend] Extend focus failed:", result.error);
+        }
+      } catch (error) {
+        logger.error("[extend] Failed to send extendFocus:", error);
+      }
+    } catch (error) {
+      logger.error("[extend] Extend focus command error:", error);
+    }
+    return;
+  }
+
   if (
     command !== "resubmit-last" &&
     command !== "submit-clipboard" &&
@@ -572,9 +766,11 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
 
     const { mode, sourceImageId } = modeResponse;
+    const isExtendMode = mode === "post-extend";
 
-    if (mode !== "post") {
-      logger.log("Not in post mode, current mode:", mode);
+    // Allow both "post" and "post-extend" modes
+    if (mode !== "post" && mode !== "post-extend") {
+      logger.log("Not in post or post-extend mode, current mode:", mode);
       return;
     }
 
@@ -583,73 +779,151 @@ chrome.commands.onCommand.addListener(async (command) => {
       return;
     }
 
+    // In extend mode, sourceImageId is actually the video ID
+    const videoId = sourceImageId;
+
     if (command === "resubmit-last") {
-      // Get the most recent history entry (keyed by source image ID)
-      const entry = await getMostRecentHistoryEntry(sourceImageId);
+      if (isExtendMode) {
+        // Extend mode: use extend history
+        const entry = await getMostRecentExtendHistoryEntry(videoId);
 
-      if (!entry) {
-        logger.log("No history entries for source image:", sourceImageId);
-        return;
-      }
-
-      logger.log("Re-submitting:", entry.text.substring(0, 50) + "...");
-
-      // Update history (increments submitCount) and invalidate cache
-      await cachedSaveToPostHistory(sourceImageId, entry.text);
-
-      // Send fillAndSubmit to the content script
-      try {
-        const result = await chrome.tabs.sendMessage(tab.id, {
-          type: PromptMessageType.FILL_AND_SUBMIT,
-          text: entry.text,
-        });
-
-        if (result && !result.success) {
-          logger.error("Fill and submit failed:", result.error);
+        if (!entry) {
+          logger.log("[extend] No extend history entries for video:", videoId);
+          return;
         }
-      } catch (error) {
-        logger.error("Failed to send fillAndSubmit:", error);
+
+        logger.log("[extend] Re-submitting extend prompt:", entry.text.substring(0, 50) + "...");
+
+        // Update extend history and invalidate cache
+        await cachedSaveToExtendHistory(videoId, entry.text);
+
+        // Send fillAndSubmitExtend to the content script
+        try {
+          const result = await chrome.tabs.sendMessage(tab.id, {
+            type: PromptMessageType.FILL_AND_SUBMIT_EXTEND,
+            text: entry.text,
+          });
+
+          if (result && !result.success) {
+            logger.error("[extend] Fill and submit extend failed:", result.error);
+          }
+        } catch (error) {
+          logger.error("[extend] Failed to send fillAndSubmitExtend:", error);
+        }
+      } else {
+        // Normal mode: use post history
+        const entry = await getMostRecentHistoryEntry(sourceImageId);
+
+        if (!entry) {
+          logger.log("No history entries for source image:", sourceImageId);
+          return;
+        }
+
+        logger.log("Re-submitting:", entry.text.substring(0, 50) + "...");
+
+        // Update history (increments submitCount) and invalidate cache
+        await cachedSaveToPostHistory(sourceImageId, entry.text);
+
+        // Send fillAndSubmit to the content script
+        try {
+          const result = await chrome.tabs.sendMessage(tab.id, {
+            type: PromptMessageType.FILL_AND_SUBMIT,
+            text: entry.text,
+          });
+
+          if (result && !result.success) {
+            logger.error("Fill and submit failed:", result.error);
+          }
+        } catch (error) {
+          logger.error("Failed to send fillAndSubmit:", error);
+        }
       }
     } else if (command === "submit-clipboard") {
-      // Send submitFromClipboard to the content script
-      try {
-        const result = await chrome.tabs.sendMessage(tab.id, {
-          type: PromptMessageType.SUBMIT_FROM_CLIPBOARD,
-          sourceImageId,
-        });
+      if (isExtendMode) {
+        // Extend mode: use extend clipboard handler
+        try {
+          const result = await chrome.tabs.sendMessage(tab.id, {
+            type: PromptMessageType.SUBMIT_FROM_CLIPBOARD_EXTEND,
+            videoId,
+          });
 
-        if (result && !result.success) {
-          logger.error("Submit from clipboard failed:", result.error);
+          if (result && !result.success) {
+            logger.error("[extend] Submit from clipboard extend failed:", result.error);
+          }
+        } catch (error) {
+          logger.error("[extend] Failed to send submitFromClipboardExtend:", error);
         }
-      } catch (error) {
-        logger.error("Failed to send submitFromClipboard:", error);
+      } else {
+        // Normal mode: use post clipboard handler
+        try {
+          const result = await chrome.tabs.sendMessage(tab.id, {
+            type: PromptMessageType.SUBMIT_FROM_CLIPBOARD,
+            sourceImageId,
+          });
+
+          if (result && !result.success) {
+            logger.error("Submit from clipboard failed:", result.error);
+          }
+        } catch (error) {
+          logger.error("Failed to send submitFromClipboard:", error);
+        }
       }
     } else if (command === "autosubmit") {
-      // Get the most recent history entry (keyed by source image ID)
-      const entry = await getMostRecentHistoryEntry(sourceImageId);
+      if (isExtendMode) {
+        // Extend mode: use extend history for autosubmit
+        const entry = await getMostRecentExtendHistoryEntry(videoId);
 
-      if (!entry) {
-        logger.log("No history entries for source image:", sourceImageId);
-        return;
-      }
-
-      logger.log(
-        "Autosubmit starting with:",
-        entry.text.substring(0, 50) + "...",
-      );
-
-      // Send autosubmit:start to the content script with default retries
-      try {
-        const result = await chrome.tabs.sendMessage(tab.id, {
-          type: AutosubmitMessageType.START,
-          maxRetries: 10,
-        });
-
-        if (result && !result.success) {
-          logger.error("Autosubmit start failed:", result.error);
+        if (!entry) {
+          logger.log("[extend] No extend history entries for video:", videoId);
+          return;
         }
-      } catch (error) {
-        logger.error("Failed to send autosubmit:start:", error);
+
+        logger.log(
+          "[extend] Autosubmit starting with extend prompt:",
+          entry.text.substring(0, 50) + "...",
+        );
+
+        // Send autosubmit:start with extend flag
+        try {
+          const result = await chrome.tabs.sendMessage(tab.id, {
+            type: AutosubmitMessageType.START,
+            maxRetries: 10,
+            isExtend: true,
+          });
+
+          if (result && !result.success) {
+            logger.error("[extend] Autosubmit start failed:", result.error);
+          }
+        } catch (error) {
+          logger.error("[extend] Failed to send autosubmit:start:", error);
+        }
+      } else {
+        // Normal mode: use post history
+        const entry = await getMostRecentHistoryEntry(sourceImageId);
+
+        if (!entry) {
+          logger.log("No history entries for source image:", sourceImageId);
+          return;
+        }
+
+        logger.log(
+          "Autosubmit starting with:",
+          entry.text.substring(0, 50) + "...",
+        );
+
+        // Send autosubmit:start to the content script with default retries
+        try {
+          const result = await chrome.tabs.sendMessage(tab.id, {
+            type: AutosubmitMessageType.START,
+            maxRetries: 10,
+          });
+
+          if (result && !result.success) {
+            logger.error("Autosubmit start failed:", result.error);
+          }
+        } catch (error) {
+          logger.error("Failed to send autosubmit:start:", error);
+        }
       }
     }
   } catch (error) {

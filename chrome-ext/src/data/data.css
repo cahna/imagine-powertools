@@ -119,6 +119,44 @@ body {
   color: var(--text-primary);
 }
 
+/* Database Toggle */
+.db-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-medium);
+}
+
+.db-toggle-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.db-toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--border-medium);
+}
+
+.db-toggle-btn:hover:not(.active) {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.db-toggle-btn.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.db-toggle-btn.active.extend {
+  background: var(--extend-badge-bg);
+}
+
 .source-info {
   display: flex;
   align-items: center;

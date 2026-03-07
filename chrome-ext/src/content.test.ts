@@ -38,6 +38,17 @@ describe("detectMode", () => {
     expect(detectMode()).toBe("post");
   });
 
+  it('returns "post-extend" when on post page with Exit extend mode button', () => {
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/imagine/post/abc-123-def" },
+      writable: true,
+    });
+
+    document.body.innerHTML = '<button aria-label="Exit extend mode">Exit</button>';
+
+    expect(detectMode()).toBe("post-extend");
+  });
+
   it('returns "results" when on /imagine with Back button present', () => {
     Object.defineProperty(window, "location", {
       value: { pathname: "/imagine" },
@@ -147,6 +158,70 @@ describe("clickVideoOption", () => {
       btn720p.addEventListener("click", clickHandler);
 
       const result = await clickVideoOption("720p");
+
+      expect(result.success).toBe(true);
+      expect(clickHandler).toHaveBeenCalled();
+    });
+  });
+
+  describe("extend mode duration options (+6s, +10s)", () => {
+    it("clicks +6s option when in extend mode and requesting 6s", async () => {
+      const clickHandler = vi.fn();
+      document.body.innerHTML = `
+        <button aria-label="Exit extend mode">Exit</button>
+        <div role="radiogroup" aria-label="Video duration">
+          <button role="radio"><span>+6s</span></button>
+          <button role="radio"><span>+10s</span></button>
+        </div>
+      `;
+
+      const btn6s = document.querySelector(
+        'button[role="radio"]',
+      ) as HTMLButtonElement;
+      btn6s.addEventListener("click", clickHandler);
+
+      const result = await clickVideoOption("6s");
+
+      expect(result.success).toBe(true);
+      expect(clickHandler).toHaveBeenCalled();
+    });
+
+    it("clicks +10s option when in extend mode and requesting 10s", async () => {
+      const clickHandler = vi.fn();
+      document.body.innerHTML = `
+        <button aria-label="Exit extend mode">Exit</button>
+        <div role="radiogroup" aria-label="Video duration">
+          <button role="radio"><span>+6s</span></button>
+          <button role="radio"><span>+10s</span></button>
+        </div>
+      `;
+
+      const btn10s = document.querySelectorAll(
+        'button[role="radio"]',
+      )[1] as HTMLButtonElement;
+      btn10s.addEventListener("click", clickHandler);
+
+      const result = await clickVideoOption("10s");
+
+      expect(result.success).toBe(true);
+      expect(clickHandler).toHaveBeenCalled();
+    });
+
+    it("does not transform duration when NOT in extend mode", async () => {
+      const clickHandler = vi.fn();
+      document.body.innerHTML = `
+        <div role="radiogroup" aria-label="Video duration">
+          <button role="radio"><span>6s</span></button>
+          <button role="radio"><span>10s</span></button>
+        </div>
+      `;
+
+      const btn6s = document.querySelector(
+        'button[role="radio"]',
+      ) as HTMLButtonElement;
+      btn6s.addEventListener("click", clickHandler);
+
+      const result = await clickVideoOption("6s");
 
       expect(result.success).toBe(true);
       expect(clickHandler).toHaveBeenCalled();

@@ -3,7 +3,7 @@
 
 import { logger } from "./shared/logger";
 
-export type Mode = "favorites" | "results" | "post" | "none";
+export type Mode = "favorites" | "results" | "post" | "post-extend" | "none";
 
 // Detect the current mode based on URL and page content
 export function detectMode(): Mode {
@@ -18,6 +18,11 @@ export function detectMode(): Mode {
   }
 
   if (pathname.startsWith("/imagine/post/")) {
+    // Check for extend mode first (Exit extend mode button present)
+    if (isInExtendMode()) {
+      logger.log("[extend] detectMode() -> post-extend");
+      return "post-extend";
+    }
     return "post";
   }
 
@@ -229,15 +234,26 @@ export async function clickMoodOptionFromMenu(
 
 // Click a video option (duration, resolution, or mood)
 // Handles collapsed form state by expanding it first for duration/resolution
+// In extend mode, duration options are "+6s" and "+10s" instead of "6s" and "10s"
 export async function clickVideoOption(
   option: string,
 ): Promise<{ success: boolean; error?: string }> {
+  // Check if we're in extend mode for duration option transformation
+  const inExtendMode = isInExtendMode();
+
   // Duration and resolution options use radiogroups
   if (["6s", "10s", "480p", "720p"].includes(option)) {
     const isResolution = ["480p", "720p"].includes(option);
     const radioGroupLabel = isResolution
       ? "Video resolution"
       : "Video duration";
+
+    // In extend mode, duration options are "+6s" and "+10s"
+    let displayOption = option;
+    if (inExtendMode && (option === "6s" || option === "10s")) {
+      displayOption = "+" + option;
+      logger.log(`[extend] Transformed duration option: ${option} -> ${displayOption}`);
+    }
 
     // Check if radiogroup is already visible
     let radioGroup = document.querySelector(
@@ -282,7 +298,7 @@ export async function clickVideoOption(
     for (const btn of buttons) {
       const spans = btn.querySelectorAll("span");
       for (const span of spans) {
-        if (span.textContent?.trim() === option) {
+        if (span.textContent?.trim() === displayOption) {
           btn.click();
           return { success: true };
         }
@@ -291,7 +307,7 @@ export async function clickVideoOption(
 
     return {
       success: false,
-      error: `Option "${option}" not found in radiogroup`,
+      error: `Option "${displayOption}" not found in radiogroup`,
     };
   }
 

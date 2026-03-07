@@ -5,6 +5,9 @@ import {
   getPostHistory,
   saveToPostHistory,
   deleteFromPostHistory,
+  getExtendHistory,
+  saveToExtendHistory,
+  deleteFromExtendHistory,
 } from "../shared/storage";
 import { logger } from "../shared/logger";
 import {
@@ -20,7 +23,7 @@ import {
   ThemePreference,
 } from "../shared/theme";
 
-type Mode = "favorites" | "results" | "post" | "none";
+type Mode = "favorites" | "results" | "post" | "post-extend" | "none";
 
 type AutosubmitState =
   | { status: "idle" }
@@ -51,6 +54,7 @@ interface JobInfo {
   state: AutosubmitState;
   startedAt: number;
   updatedAt: number;
+  jobType: "video" | "extend";
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -71,6 +75,7 @@ const MODE_LABELS: Record<Mode, string> = {
   favorites: "Favorites",
   results: "Results",
   post: "Post",
+  "post-extend": "Extend",
   none: "None",
 };
 
@@ -210,7 +215,7 @@ function renderJobs(
 
     const statusInfo = getJobStatusInfo(job.state);
 
-    // Header row: status badge + prompt preview
+    // Header row: status badge + type badge + prompt preview
     const header = document.createElement("div");
     header.className = "job-header";
 
@@ -218,11 +223,16 @@ function renderJobs(
     statusBadge.className = `job-status ${statusInfo.className}`;
     statusBadge.textContent = statusInfo.text;
 
+    const typeBadge = document.createElement("span");
+    typeBadge.className = `job-type-badge job-type-${job.jobType}`;
+    typeBadge.textContent = job.jobType === "extend" ? "Extend" : "Video";
+
     const promptPreview = document.createElement("span");
     promptPreview.className = "job-prompt";
     promptPreview.textContent = `"${job.promptText.substring(0, 30)}${job.promptText.length > 30 ? "..." : ""}"`;
 
     header.appendChild(statusBadge);
+    header.appendChild(typeBadge);
     header.appendChild(promptPreview);
 
     // Details row: tab name + time
@@ -342,7 +352,8 @@ function generateShortcutsScript(): string {
     'autosubmit': 'A',
     'extend-video': 'E',
     'carousel-prev': 'K',
-    'carousel-next': 'J'
+    'carousel-next': 'J',
+    'extend-focus': 'W'
   };
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -641,8 +652,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       statusEl.textContent = tab.title || url;
     }
 
+    // Handle both "post" and "post-extend" modes with the same UI
+    const isExtendMode = mode === "post-extend";
+    const isPostOrExtendMode = mode === "post" || isExtendMode;
+
     if (
-      mode === "post" &&
+      isPostOrExtendMode &&
       sourceImageId &&
       postUi &&
       postForm &&
@@ -651,19 +666,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     ) {
       postUi.classList.remove("hidden");
 
+      // Use appropriate history functions based on mode
+      const getHistoryFn = isExtendMode ? getExtendHistory : getPostHistory;
+      const saveHistoryFn = isExtendMode ? saveToExtendHistory : saveToPostHistory;
+      const deleteHistoryFn = isExtendMode ? deleteFromExtendHistory : deleteFromPostHistory;
+      const fillAndSubmitType = isExtendMode
+        ? PromptMessageType.FILL_AND_SUBMIT_EXTEND
+        : PromptMessageType.FILL_AND_SUBMIT;
+
       const historyOptions: RenderHistoryOptions = {
         onRestore: (entry) => {
           postInput.value = entry.text;
           postInput.focus();
         },
         onDelete: async (entry) => {
-          await deleteFromPostHistory(sourceImageId, entry.timestamp);
-          const updatedHistory = await getPostHistory(sourceImageId);
+          await deleteHistoryFn(sourceImageId, entry.timestamp);
+          const updatedHistory = await getHistoryFn(sourceImageId);
           renderHistory(updatedHistory, historyList, historyOptions);
         },
       };
 
-      const history = await getPostHistory(sourceImageId);
+      const history = await getHistoryFn(sourceImageId);
       renderHistory(history, historyList, historyOptions);
 
       postForm.addEventListener("submit", async (e) => {
@@ -673,15 +696,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!text) return;
 
         // Save to history (handles duplicates by incrementing submitCount)
-        await saveToPostHistory(sourceImageId, text);
-        const updatedHistory = await getPostHistory(sourceImageId);
+        await saveHistoryFn(sourceImageId, text);
+        const updatedHistory = await getHistoryFn(sourceImageId);
         renderHistory(updatedHistory, historyList, historyOptions);
 
         postInput.value = "";
 
         try {
           const result = await chrome.tabs.sendMessage(tab.id!, {
-            type: PromptMessageType.FILL_AND_SUBMIT,
+            type: fillAndSubmitType,
             text,
           });
 
@@ -783,22 +806,23 @@ document.addEventListener("DOMContentLoaded", async () => {
             1,
             parseInt(autosubmitCountInput.value, 10) || 10,
           );
-          logger.log(`Starting autosubmit with maxRetries=${maxRetries}`);
+          logger.log(`Starting autosubmit with maxRetries=${maxRetries}, isExtend=${isExtendMode}`);
 
           // First, submit the current prompt (like clicking Submit)
           const text = postInput.value.trim();
           if (text) {
-            await saveToPostHistory(sourceImageId, text);
-            const updatedHistory = await getPostHistory(sourceImageId);
+            await saveHistoryFn(sourceImageId, text);
+            const updatedHistory = await getHistoryFn(sourceImageId);
             renderHistory(updatedHistory, historyList, historyOptions);
             postInput.value = "";
           }
 
-          // Now start autosubmit
+          // Now start autosubmit (with isExtend flag for extend mode)
           try {
             await chrome.tabs.sendMessage(tab.id!, {
               type: AutosubmitMessageType.START,
               maxRetries,
+              isExtend: isExtendMode,
             });
           } catch (err) {
             logger.error("Failed to start autosubmit:", err);
@@ -819,8 +843,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         });
       }
-    } else if (mode === "post" && !sourceImageId && postUi && statusEl) {
-      statusEl.textContent = "Could not detect source image";
+    } else if (isPostOrExtendMode && !sourceImageId && postUi && statusEl) {
+      statusEl.textContent = isExtendMode
+        ? "Could not detect video ID"
+        : "Could not detect source image";
     }
   } catch (error) {
     logger.error("Failed to get mode:", error);

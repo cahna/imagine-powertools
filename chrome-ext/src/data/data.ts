@@ -2,17 +2,26 @@
 
 import {
   PostHistory,
+  ExtendHistory,
   HistoryEntry,
   getAllHistory,
+  getAllExtendHistory,
   validatePostHistory,
+  validateExtendHistory,
   mergeHistories,
+  mergeExtendHistories,
   bulkImportHistory,
+  bulkImportExtendHistory,
   clearAllHistory,
+  clearAllExtendHistory,
 } from "../shared/storage";
 import { initTheme } from "../shared/theme";
 
+type DbType = "video" | "extend";
+
 // State
-let currentHistory: PostHistory = {};
+let currentDbType: DbType = "video";
+let currentHistory: PostHistory | ExtendHistory = {};
 let selectedSourceId: string | null = null;
 let searchQuery = "";
 
@@ -25,6 +34,10 @@ const elements = {
   // Nav
   navBtns: document.querySelectorAll<HTMLButtonElement>(".nav-btn"),
   tabContents: document.querySelectorAll<HTMLElement>(".tab-content"),
+
+  // Database toggle
+  dbVideoBtn: document.getElementById("db-video") as HTMLButtonElement,
+  dbExtendBtn: document.getElementById("db-extend") as HTMLButtonElement,
 
   // Explorer
   sourceCount: document.getElementById("source-count"),
@@ -319,7 +332,12 @@ async function saveModal(): Promise<void> {
     }
   }
 
-  await bulkImportHistory(currentHistory);
+  // Use correct import function based on current database type
+  if (currentDbType === "video") {
+    await bulkImportHistory(currentHistory as PostHistory);
+  } else {
+    await bulkImportExtendHistory(currentHistory as ExtendHistory);
+  }
 
   closeModal();
   renderPromptsList();
@@ -344,7 +362,12 @@ async function deletePrompt(timestamp: number): Promise<void> {
     selectedSourceId = null;
   }
 
-  await bulkImportHistory(currentHistory);
+  // Use correct import function based on current database type
+  if (currentDbType === "video") {
+    await bulkImportHistory(currentHistory as PostHistory);
+  } else {
+    await bulkImportExtendHistory(currentHistory as ExtendHistory);
+  }
 
   renderPromptsList();
   renderSourcesList();
@@ -366,7 +389,12 @@ async function deleteSource(): Promise<void> {
   delete currentHistory[selectedSourceId];
   selectedSourceId = null;
 
-  await bulkImportHistory(currentHistory);
+  // Use correct import function based on current database type
+  if (currentDbType === "video") {
+    await bulkImportHistory(currentHistory as PostHistory);
+  } else {
+    await bulkImportExtendHistory(currentHistory as ExtendHistory);
+  }
 
   renderPromptsList();
   renderSourcesList();
@@ -386,6 +414,27 @@ function showStatus(message: string, isError: boolean): void {
       elements.importStatus?.classList.add("hidden");
     }, 5000);
   }
+}
+
+// Toggle UI
+function updateToggleUI(): void {
+  const isExtend = currentDbType === "extend";
+  elements.dbVideoBtn?.classList.toggle("active", !isExtend);
+  elements.dbExtendBtn?.classList.toggle("active", isExtend);
+  elements.dbExtendBtn?.classList.toggle("extend", isExtend);
+}
+
+// Load history based on current database type
+async function loadHistory(): Promise<void> {
+  if (currentDbType === "video") {
+    currentHistory = await getAllHistory();
+  } else {
+    currentHistory = await getAllExtendHistory();
+  }
+  selectedSourceId = null;
+  updateStats();
+  renderSourcesList();
+  renderPromptsList();
 }
 
 // Initialize
@@ -410,6 +459,21 @@ async function init(): Promise<void> {
         content.classList.toggle("active", content.id === `tab-${tab}`);
       });
     });
+  });
+
+  // Database toggle
+  elements.dbVideoBtn?.addEventListener("click", async () => {
+    if (currentDbType === "video") return;
+    currentDbType = "video";
+    updateToggleUI();
+    await loadHistory();
+  });
+
+  elements.dbExtendBtn?.addEventListener("click", async () => {
+    if (currentDbType === "extend") return;
+    currentDbType = "extend";
+    updateToggleUI();
+    await loadHistory();
   });
 
   // Search
@@ -449,7 +513,7 @@ async function init(): Promise<void> {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `imagine-power-tools-history-${new Date().toISOString().split("T")[0]}.json`;
+    a.download = `imagine-${currentDbType}-history-${new Date().toISOString().split("T")[0]}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -469,17 +533,22 @@ async function init(): Promise<void> {
       const text = await file.text();
       const parsed = JSON.parse(text);
 
-      if (!validatePostHistory(parsed)) {
+      // Use correct validation and import functions based on current database type
+      const validateFn = currentDbType === "video" ? validatePostHistory : validateExtendHistory;
+      const mergeFn = currentDbType === "video" ? mergeHistories : mergeExtendHistories;
+      const importFn = currentDbType === "video" ? bulkImportHistory : bulkImportExtendHistory;
+
+      if (!validateFn(parsed)) {
         showStatus("Invalid data format.", true);
         return;
       }
 
-      const { merged, addedCount, skippedCount } = mergeHistories(
-        currentHistory,
+      const { merged, addedCount, skippedCount } = mergeFn(
+        currentHistory as PostHistory & ExtendHistory,
         parsed,
       );
 
-      await bulkImportHistory(merged);
+      await importFn(merged);
       currentHistory = merged;
 
       showStatus(
@@ -514,17 +583,22 @@ async function init(): Promise<void> {
     try {
       const parsed = JSON.parse(json);
 
-      if (!validatePostHistory(parsed)) {
+      // Use correct validation and import functions based on current database type
+      const validateFn = currentDbType === "video" ? validatePostHistory : validateExtendHistory;
+      const mergeFn = currentDbType === "video" ? mergeHistories : mergeExtendHistories;
+      const importFn = currentDbType === "video" ? bulkImportHistory : bulkImportExtendHistory;
+
+      if (!validateFn(parsed)) {
         showStatus("Invalid data format.", true);
         return;
       }
 
-      const { merged, addedCount, skippedCount } = mergeHistories(
-        currentHistory,
+      const { merged, addedCount, skippedCount } = mergeFn(
+        currentHistory as PostHistory & ExtendHistory,
         parsed,
       );
 
-      await bulkImportHistory(merged);
+      await importFn(merged);
       currentHistory = merged;
 
       showStatus(
@@ -550,18 +624,23 @@ async function init(): Promise<void> {
 
   // Clear all
   elements.clearBtn?.addEventListener("click", async () => {
-    if (!confirm("Delete ALL data? This cannot be undone.")) {
+    const dbLabel = currentDbType === "video" ? "video" : "extend";
+    if (!confirm(`Delete ALL ${dbLabel} history data? This cannot be undone.`)) {
       return;
     }
 
-    await clearAllHistory();
+    if (currentDbType === "video") {
+      await clearAllHistory();
+    } else {
+      await clearAllExtendHistory();
+    }
     currentHistory = {};
     selectedSourceId = null;
 
     updateStats();
     renderSourcesList();
     renderPromptsList();
-    showStatus("All data cleared.", false);
+    showStatus(`All ${dbLabel} data cleared.`, false);
   });
 }
 

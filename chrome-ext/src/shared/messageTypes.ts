@@ -30,6 +30,21 @@ export type StorageMessageType =
   (typeof StorageMessageType)[keyof typeof StorageMessageType];
 
 /**
+ * Message types for extend history storage operations (content script -> background)
+ */
+export const ExtendStorageMessageType = {
+  /** Get extend history for a specific video ID */
+  GET_EXTEND_HISTORY: "storage:getExtendHistory",
+  /** Save an extend prompt to history for a specific video ID */
+  SAVE_TO_EXTEND_HISTORY: "storage:saveToExtendHistory",
+  /** Delete an extend prompt from history */
+  DELETE_FROM_EXTEND_HISTORY: "storage:deleteFromExtendHistory",
+} as const;
+
+export type ExtendStorageMessageType =
+  (typeof ExtendStorageMessageType)[keyof typeof ExtendStorageMessageType];
+
+/**
  * Message types for prompt filling and submission
  */
 export const PromptMessageType = {
@@ -47,6 +62,12 @@ export const PromptMessageType = {
   CAROUSEL_PREV: "carouselPrev",
   /** Navigate to next video in carousel */
   CAROUSEL_NEXT: "carouselNext",
+  /** Enter extend mode and focus prompt input */
+  EXTEND_FOCUS: "extendFocus",
+  /** Fill and submit in extend mode (saves to extend history) */
+  FILL_AND_SUBMIT_EXTEND: "fillAndSubmitExtend",
+  /** Submit from clipboard in extend mode (saves to extend history) */
+  SUBMIT_FROM_CLIPBOARD_EXTEND: "submitFromClipboardExtend",
 } as const;
 
 export type PromptMessageType =

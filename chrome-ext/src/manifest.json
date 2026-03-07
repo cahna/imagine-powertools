@@ -67,6 +67,9 @@
     },
     "carousel-next": {
       "description": "Next video in carousel"
+    },
+    "extend-focus": {
+      "description": "Enter extend mode and focus prompt"
     }
   },
   "action": {
