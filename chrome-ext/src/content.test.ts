@@ -5,10 +5,18 @@ import {
   fillAndSubmitVideo,
   findMenuItemByText,
   detectGenerationOutcome,
+  detectGenerationOutcomeWithContext,
   isInExtendMode,
   clickMakeVideoButton,
   clickExtendVideoFromMenu,
   navigateVideoCarousel,
+  getCurrentPostId,
+  getCarouselItemCount,
+  isSelectedCarouselItemModerated,
+  isPreviewAreaModerated,
+  selectFirstValidCarouselItem,
+  selectCarouselItemByVideoId,
+  type GenerationContext,
 } from "./content.core";
 
 describe("detectMode", () => {
@@ -44,7 +52,11 @@ describe("detectMode", () => {
       writable: true,
     });
 
-    document.body.innerHTML = '<button aria-label="Exit extend mode">Exit</button>';
+    document.body.innerHTML = `
+      <div class="tiptap ProseMirror">
+        <p data-placeholder="Extend video" class="is-empty"></p>
+      </div>
+    `;
 
     expect(detectMode()).toBe("post-extend");
   });
@@ -168,7 +180,9 @@ describe("clickVideoOption", () => {
     it("clicks +6s option when in extend mode and requesting 6s", async () => {
       const clickHandler = vi.fn();
       document.body.innerHTML = `
-        <button aria-label="Exit extend mode">Exit</button>
+        <div class="tiptap ProseMirror">
+          <p data-placeholder="Extend video" class="is-empty"></p>
+        </div>
         <div role="radiogroup" aria-label="Video duration">
           <button role="radio"><span>+6s</span></button>
           <button role="radio"><span>+10s</span></button>
@@ -189,7 +203,9 @@ describe("clickVideoOption", () => {
     it("clicks +10s option when in extend mode and requesting 10s", async () => {
       const clickHandler = vi.fn();
       document.body.innerHTML = `
-        <button aria-label="Exit extend mode">Exit</button>
+        <div class="tiptap ProseMirror">
+          <p data-placeholder="Extend video" class="is-empty"></p>
+        </div>
         <div role="radiogroup" aria-label="Video duration">
           <button role="radio"><span>+6s</span></button>
           <button role="radio"><span>+10s</span></button>
@@ -529,6 +545,51 @@ describe("detectGenerationOutcome", () => {
 
       expect(result.type).toBe("moderated");
     });
+
+    it("detects moderation from large eye-off icon in preview area", () => {
+      document.body.innerHTML = `
+        <svg class="lucide lucide-eye-off size-24 text-primary">
+          <path d="M10.733 5.076"></path>
+        </svg>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("moderated");
+    });
+
+    it("detects moderation from selected carousel item with eye-off icon", () => {
+      document.body.innerHTML = `
+        <div class="snap-y snap-mandatory">
+          <button class="snap-center ring-fg-primary">
+            <svg class="lucide lucide-eye-off size-4 text-gray-400">
+              <path d="M10.733 5.076"></path>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      expect(result.type).toBe("moderated");
+    });
+
+    it("does not detect moderation from small eye-off icon in non-selected carousel item", () => {
+      document.body.innerHTML = `
+        <div class="snap-y snap-mandatory">
+          <button class="snap-center opacity-75">
+            <svg class="lucide lucide-eye-off size-4 text-gray-400">
+              <path d="M10.733 5.076"></path>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      const result = detectGenerationOutcome();
+
+      // Should be unknown since item is not selected
+      expect(result.type).toBe("unknown");
+    });
   });
 
   describe("success detection", () => {
@@ -622,22 +683,409 @@ describe("detectGenerationOutcome", () => {
   });
 });
 
+describe("getCurrentPostId", () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/" },
+      writable: true,
+    });
+  });
+
+  it("extracts post ID from /imagine/post/{id} path", () => {
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/imagine/post/abc-123-def-456" },
+      writable: true,
+    });
+
+    expect(getCurrentPostId()).toBe("abc-123-def-456");
+  });
+
+  it("returns null for non-post paths", () => {
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/imagine/favorites" },
+      writable: true,
+    });
+
+    expect(getCurrentPostId()).toBeNull();
+  });
+
+  it("returns null for root path", () => {
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/" },
+      writable: true,
+    });
+
+    expect(getCurrentPostId()).toBeNull();
+  });
+});
+
+describe("getCarouselItemCount", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("counts carousel items correctly", () => {
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center">1</button>
+        <button class="snap-center">2</button>
+        <button class="snap-center">3</button>
+      </div>
+    `;
+
+    expect(getCarouselItemCount()).toBe(3);
+  });
+
+  it("returns 0 when carousel container not found", () => {
+    document.body.innerHTML = `<div>No carousel</div>`;
+
+    expect(getCarouselItemCount()).toBe(0);
+  });
+
+  it("returns 0 for empty carousel", () => {
+    document.body.innerHTML = `<div class="snap-y snap-mandatory"></div>`;
+
+    expect(getCarouselItemCount()).toBe(0);
+  });
+});
+
+describe("isSelectedCarouselItemModerated", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("returns true when selected item has eye-off icon", () => {
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center ring-fg-primary">
+          <svg class="lucide lucide-eye-off"></svg>
+        </button>
+      </div>
+    `;
+
+    expect(isSelectedCarouselItemModerated()).toBe(true);
+  });
+
+  it("returns false when selected item has no eye-off icon", () => {
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center ring-fg-primary">
+          <img src="thumbnail.jpg" />
+        </button>
+      </div>
+    `;
+
+    expect(isSelectedCarouselItemModerated()).toBe(false);
+  });
+
+  it("returns false when no item is selected", () => {
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center opacity-75">
+          <svg class="lucide lucide-eye-off"></svg>
+        </button>
+      </div>
+    `;
+
+    expect(isSelectedCarouselItemModerated()).toBe(false);
+  });
+
+  it("returns false when carousel not found", () => {
+    document.body.innerHTML = `<div>No carousel</div>`;
+
+    expect(isSelectedCarouselItemModerated()).toBe(false);
+  });
+});
+
+describe("isPreviewAreaModerated", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("returns true when large eye-off icon present", () => {
+    document.body.innerHTML = `
+      <svg class="lucide lucide-eye-off size-24 text-primary"></svg>
+    `;
+
+    expect(isPreviewAreaModerated()).toBe(true);
+  });
+
+  it("returns false when only small eye-off icon present", () => {
+    document.body.innerHTML = `
+      <svg class="lucide lucide-eye-off size-4 text-gray-400"></svg>
+    `;
+
+    expect(isPreviewAreaModerated()).toBe(false);
+  });
+
+  it("returns false when no eye-off icon present", () => {
+    document.body.innerHTML = `<div>Normal content</div>`;
+
+    expect(isPreviewAreaModerated()).toBe(false);
+  });
+});
+
+describe("selectFirstValidCarouselItem", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("clicks the first non-moderated item", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center" id="btn1">
+          <img src="thumbnail.jpg" />
+        </button>
+        <button class="snap-center" id="btn2">
+          <img src="thumbnail2.jpg" />
+        </button>
+      </div>
+    `;
+    document.getElementById("btn1")!.addEventListener("click", clickHandler);
+
+    const result = selectFirstValidCarouselItem();
+
+    expect(result).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
+  });
+
+  it("skips moderated items and clicks first valid one", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center" id="btn1">
+          <svg class="lucide lucide-eye-off"></svg>
+        </button>
+        <button class="snap-center" id="btn2">
+          <img src="thumbnail.jpg" />
+        </button>
+      </div>
+    `;
+    document.getElementById("btn2")!.addEventListener("click", clickHandler);
+
+    const result = selectFirstValidCarouselItem();
+
+    expect(result).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
+  });
+
+  it("returns false when all items are moderated", () => {
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center">
+          <svg class="lucide lucide-eye-off"></svg>
+        </button>
+        <button class="snap-center">
+          <svg class="lucide lucide-eye-off"></svg>
+        </button>
+      </div>
+    `;
+
+    const result = selectFirstValidCarouselItem();
+
+    expect(result).toBe(false);
+  });
+
+  it("returns false when carousel not found", () => {
+    document.body.innerHTML = `<div>No carousel</div>`;
+
+    const result = selectFirstValidCarouselItem();
+
+    expect(result).toBe(false);
+  });
+});
+
+describe("selectCarouselItemByVideoId", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("clicks carousel item matching video ID in preview_image.jpg URL", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center" id="btn1">
+          <img src="https://assets.grok.com/users/123/generated/abc-123-def/preview_image.jpg" />
+        </button>
+        <button class="snap-center" id="btn2">
+          <img src="https://assets.grok.com/users/123/generated/xyz-789-uvw/preview_image.jpg" />
+        </button>
+      </div>
+    `;
+    document.getElementById("btn2")!.addEventListener("click", clickHandler);
+
+    const result = selectCarouselItemByVideoId("xyz-789-uvw");
+
+    expect(result).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
+  });
+
+  it("clicks carousel item matching video ID in share-videos thumbnail URL", () => {
+    const clickHandler = vi.fn();
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center" id="btn1">
+          <img src="https://imagine-public.x.ai/imagine-public/share-videos/abc-123_thumbnail.jpg" />
+        </button>
+      </div>
+    `;
+    document.getElementById("btn1")!.addEventListener("click", clickHandler);
+
+    const result = selectCarouselItemByVideoId("abc-123");
+
+    expect(result).toBe(true);
+    expect(clickHandler).toHaveBeenCalled();
+  });
+
+  it("returns false when video ID not found", () => {
+    document.body.innerHTML = `
+      <div class="snap-y snap-mandatory">
+        <button class="snap-center">
+          <img src="https://example.com/other-video.jpg" />
+        </button>
+      </div>
+    `;
+
+    const result = selectCarouselItemByVideoId("nonexistent-id");
+
+    expect(result).toBe(false);
+  });
+
+  it("returns false when carousel not found", () => {
+    document.body.innerHTML = `<div>No carousel</div>`;
+
+    const result = selectCarouselItemByVideoId("any-id");
+
+    expect(result).toBe(false);
+  });
+});
+
+describe("detectGenerationOutcomeWithContext", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/" },
+      writable: true,
+    });
+  });
+
+  it("returns moderated when URL reverted from expected post", () => {
+    // Scenario: generation started at new-uuid, but URL reverted to old-uuid
+    // and there's a successful video visible (from the previous post)
+    document.body.innerHTML = `
+      <video id="sd-video" src="https://example.com/video.mp4"></video>
+    `;
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/imagine/post/old-uuid" },
+      writable: true,
+    });
+
+    const context: GenerationContext = {
+      initialPostId: "old-uuid",
+      initialCarouselCount: 3,
+      expectedPostId: "new-uuid-that-was-moderated",
+    };
+
+    const result = detectGenerationOutcomeWithContext(context);
+
+    expect(result.type).toBe("moderated");
+  });
+
+  it("returns success when URL matches expected post", () => {
+    document.body.innerHTML = `
+      <video id="sd-video" src="https://example.com/video.mp4"></video>
+    `;
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/imagine/post/new-uuid" },
+      writable: true,
+    });
+
+    const context: GenerationContext = {
+      initialPostId: "old-uuid",
+      initialCarouselCount: 3,
+      expectedPostId: "new-uuid",
+    };
+
+    const result = detectGenerationOutcomeWithContext(context);
+
+    expect(result.type).toBe("success");
+  });
+
+  it("passes through non-success/unknown outcomes without context validation", () => {
+    document.body.innerHTML = `
+      <section aria-label="Notifications">Rate limit reached</section>
+    `;
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/imagine/post/different-uuid" },
+      writable: true,
+    });
+
+    const context: GenerationContext = {
+      initialPostId: "old-uuid",
+      initialCarouselCount: 3,
+      expectedPostId: "expected-uuid",
+    };
+
+    const result = detectGenerationOutcomeWithContext(context);
+
+    // Should return rate_limited, not check context
+    expect(result.type).toBe("rate_limited");
+  });
+
+  it("returns moderated for unknown state when URL changed unexpectedly", () => {
+    document.body.innerHTML = `<div>Some content</div>`;
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/imagine/post/old-uuid" },
+      writable: true,
+    });
+
+    const context: GenerationContext = {
+      initialPostId: "old-uuid",
+      initialCarouselCount: 3,
+      expectedPostId: "new-uuid",
+    };
+
+    const result = detectGenerationOutcomeWithContext(context);
+
+    expect(result.type).toBe("moderated");
+  });
+
+  it("returns unknown when no expectedPostId set", () => {
+    document.body.innerHTML = `<div>Some content</div>`;
+
+    const context: GenerationContext = {
+      initialPostId: "old-uuid",
+      initialCarouselCount: 3,
+      expectedPostId: null,
+    };
+
+    const result = detectGenerationOutcomeWithContext(context);
+
+    expect(result.type).toBe("unknown");
+  });
+});
+
 describe("isInExtendMode", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
   });
 
-  it("returns true when Exit extend mode button is present", () => {
+  it("returns true when Extend video placeholder is present", () => {
     document.body.innerHTML = `
-      <button aria-label="Exit extend mode">Extend Video</button>
+      <div class="tiptap ProseMirror">
+        <p data-placeholder="Extend video" class="is-empty"></p>
+      </div>
     `;
 
     expect(isInExtendMode()).toBe(true);
   });
 
-  it("returns false when Exit extend mode button is not present", () => {
+  it("returns false when Extend video placeholder is not present", () => {
     document.body.innerHTML = `
-      <button aria-label="Make video">Make video</button>
+      <div class="tiptap ProseMirror">
+        <p data-placeholder="Make a video" class="is-empty"></p>
+      </div>
     `;
 
     expect(isInExtendMode()).toBe(false);

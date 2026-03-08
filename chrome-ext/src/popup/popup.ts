@@ -668,8 +668,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // Use appropriate history functions based on mode
       const getHistoryFn = isExtendMode ? getExtendHistory : getPostHistory;
-      const saveHistoryFn = isExtendMode ? saveToExtendHistory : saveToPostHistory;
-      const deleteHistoryFn = isExtendMode ? deleteFromExtendHistory : deleteFromPostHistory;
+      const saveHistoryFn = isExtendMode
+        ? saveToExtendHistory
+        : saveToPostHistory;
+      const deleteHistoryFn = isExtendMode
+        ? deleteFromExtendHistory
+        : deleteFromPostHistory;
       const fillAndSubmitType = isExtendMode
         ? PromptMessageType.FILL_AND_SUBMIT_EXTEND
         : PromptMessageType.FILL_AND_SUBMIT;
@@ -806,7 +810,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             1,
             parseInt(autosubmitCountInput.value, 10) || 10,
           );
-          logger.log(`Starting autosubmit with maxRetries=${maxRetries}, isExtend=${isExtendMode}`);
+          logger.log(
+            `Starting autosubmit with maxRetries=${maxRetries}, isExtend=${isExtendMode}`,
+          );
 
           // First, submit the current prompt (like clicking Submit)
           const text = postInput.value.trim();

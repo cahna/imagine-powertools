@@ -175,7 +175,9 @@ export async function getRecordCount(): Promise<number> {
 // =============================================================================
 
 /** Retrieves extend history entries for a video ID with O(1) IndexedDB lookup. */
-export async function getExtendEntries(videoId: string): Promise<HistoryEntry[]> {
+export async function getExtendEntries(
+  videoId: string,
+): Promise<HistoryEntry[]> {
   const db = await openDB();
 
   return new Promise((resolve, reject) => {
@@ -218,7 +220,9 @@ export async function setExtendEntries(
 }
 
 /** Retrieves all extend history records from the database for export functionality. */
-export async function getAllExtendRecords(): Promise<Map<string, HistoryEntry[]>> {
+export async function getAllExtendRecords(): Promise<
+  Map<string, HistoryEntry[]>
+> {
   const db = await openDB();
 
   return new Promise((resolve, reject) => {

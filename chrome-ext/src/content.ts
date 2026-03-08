@@ -3,17 +3,25 @@
 import {
   type Mode,
   type GenerationOutcome,
+  type GenerationContext,
   detectMode,
   fillAndSubmitVideo,
   clickVideoOption,
   setReactInputValue,
   detectGenerationOutcome,
   waitForOutcome,
+  waitForOutcomeWithContext,
   waitForElement,
   isInExtendMode,
   clickMakeVideoButton,
   clickExtendVideoFromMenu,
   navigateVideoCarousel,
+  captureGenerationContext,
+  getCurrentPostId,
+  isSelectedCarouselItemModerated,
+  isPreviewAreaModerated,
+  selectFirstValidCarouselItem,
+  recoverExtendModeForVideo,
 } from "./content.core";
 import { logger } from "./shared/logger";
 import {
@@ -73,64 +81,104 @@ function broadcastAutosubmitStatus(): void {
 }
 
 /** Runs the autosubmit loop, retrying submissions until success or max retries reached. */
-async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Promise<void> {
+async function runAutosubmit(
+  maxRetries: number,
+  isExtend: boolean = false,
+): Promise<void> {
   if (autosubmitState.status === "running") {
     logger.log("Autosubmit already running, ignoring");
     return;
   }
 
   const logPrefix = isExtend ? "[extend] " : "";
-  logger.log(`${logPrefix}Starting autosubmit with maxRetries=${maxRetries}, isExtend=${isExtend}`);
+  logger.log(
+    `${logPrefix}Starting autosubmit with maxRetries=${maxRetries}, isExtend=${isExtend}`,
+  );
 
   autosubmitAbortController = new AbortController();
   const signal = autosubmitAbortController.signal;
 
-  // Get prompt text for job registration
-  const sourceImageIdForJob = getSourceImageId();
-  if (sourceImageIdForJob) {
-    // Get most recent prompt text from the appropriate history
-    const historyForJob = await new Promise<{
-      success: boolean;
-      entries?: HistoryEntry[];
-    }>((resolve) => {
-      if (isExtend) {
-        chrome.runtime.sendMessage(
-          {
-            type: ExtendStorageMessageType.GET_EXTEND_HISTORY,
-            videoId: sourceImageIdForJob,
-          },
-          (response) => resolve(response || { success: false }),
-        );
-      } else {
-        chrome.runtime.sendMessage(
-          {
-            type: StorageMessageType.GET_POST_HISTORY,
-            postId: sourceImageIdForJob,
-          },
-          (response) => resolve(response || { success: false }),
-        );
-      }
-    });
-
-    const sortedForJob = historyForJob.entries?.sort(
-      (a, b) => b.timestamp - a.timestamp,
-    );
-    const promptText = sortedForJob?.[0]?.text || "";
-
-    // Register job with background script
-    chrome.runtime
-      .sendMessage({
-        type: JobsMessageType.REGISTER,
-        tabTitle: document.title,
-        sourceImageId: sourceImageIdForJob,
-        promptText,
-        maxRetries,
-        jobType: isExtend ? "extend" : "video",
-      })
-      .catch(() => {
-        // Background script may be unavailable, ignore
-      });
+  // For extend mode, track the source video ID (the video we're extending from)
+  // This is needed for recovery after moderation
+  const extendSourceVideoId = isExtend ? getPostId() : null;
+  if (isExtend) {
+    logger.log(`${logPrefix}Extend source video ID: ${extendSourceVideoId}`);
   }
+
+  // For image-to-video (not extend), if viewing a moderated result, navigate to first valid item
+  // Check both: preview area showing moderation OR selected carousel item is moderated
+  // This allows autosubmit to work even when starting from a moderated state
+  if (
+    !isExtend &&
+    (isPreviewAreaModerated() || isSelectedCarouselItemModerated())
+  ) {
+    logger.log(
+      "Moderated content detected, navigating to first valid carousel item",
+    );
+    if (!selectFirstValidCarouselItem()) {
+      logger.error(`${logPrefix}No valid carousel items found`);
+      autosubmitState = { status: "stopped", reason: "cancelled", attempt: 0 };
+      broadcastAutosubmitStatus();
+      return;
+    }
+    // Brief delay to let the page update after navigation
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  // Cache the source image ID at the start - this must be fetched BEFORE any moderation
+  // can change the page state, and reused for all retry attempts
+  const sourceImageId = getSourceImageId();
+  if (!sourceImageId) {
+    logger.error(
+      `${logPrefix}Could not get source image ID - is a valid video selected?`,
+    );
+    autosubmitState = { status: "stopped", reason: "cancelled", attempt: 0 };
+    broadcastAutosubmitStatus();
+    return;
+  }
+
+  // Get prompt text for job registration
+  const historyForJob = await new Promise<{
+    success: boolean;
+    entries?: HistoryEntry[];
+  }>((resolve) => {
+    if (isExtend && extendSourceVideoId) {
+      chrome.runtime.sendMessage(
+        {
+          type: ExtendStorageMessageType.GET_EXTEND_HISTORY,
+          videoId: extendSourceVideoId,
+        },
+        (response) => resolve(response || { success: false }),
+      );
+    } else {
+      chrome.runtime.sendMessage(
+        {
+          type: StorageMessageType.GET_POST_HISTORY,
+          postId: sourceImageId,
+        },
+        (response) => resolve(response || { success: false }),
+      );
+    }
+  });
+
+  const sortedForJob = historyForJob.entries?.sort(
+    (a, b) => b.timestamp - a.timestamp,
+  );
+  const promptText = sortedForJob?.[0]?.text || "";
+
+  // Register job with background script
+  chrome.runtime
+    .sendMessage({
+      type: JobsMessageType.REGISTER,
+      tabTitle: document.title,
+      sourceImageId,
+      promptText,
+      maxRetries,
+      jobType: isExtend ? "extend" : "video",
+    })
+    .catch(() => {
+      // Background script may be unavailable, ignore
+    });
 
   // The expected mode depends on whether we're in extend mode
   const expectedMode = isExtend ? "post-extend" : "post";
@@ -144,11 +192,19 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
     // Check we're still in the expected mode
     const currentModeCheck = detectMode();
     if (currentModeCheck !== expectedMode) {
-      logger.log(`${logPrefix}No longer in ${expectedMode} mode (now ${currentModeCheck}), stopping`);
+      logger.log(
+        `${logPrefix}No longer in ${expectedMode} mode (now ${currentModeCheck}), stopping`,
+      );
       autosubmitState = { status: "stopped", reason: "navigated", attempt };
       broadcastAutosubmitStatus();
       break;
     }
+
+    // Capture generation context BEFORE submission for accurate outcome detection
+    const context = captureGenerationContext();
+    logger.log(
+      `${logPrefix}Context: postId=${context.initialPostId}, carouselCount=${context.initialCarouselCount}`,
+    );
 
     // Update state: submitting
     autosubmitState = {
@@ -158,25 +214,25 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
       phase: "submitting",
     };
     broadcastAutosubmitStatus();
-    logger.log(`${logPrefix}Autosubmit attempt ${attempt}/${maxRetries} - submitting`);
+    logger.log(
+      `${logPrefix}Autosubmit attempt ${attempt}/${maxRetries} - submitting`,
+    );
 
-    // Get the source image / video ID
-    const sourceImageId = getSourceImageId();
-    if (!sourceImageId) {
-      logger.error(`${logPrefix}Could not get source image ID`);
-      autosubmitState = { status: "stopped", reason: "navigated", attempt };
-      broadcastAutosubmitStatus();
-      break;
-    }
+    // sourceImageId was cached at the start of autosubmit and reused here
 
     // Get the most recent history entry via background script (use appropriate history)
+    // For extend mode, use extendSourceVideoId (the video being extended)
+    // For image-to-video, use sourceImageId (the source image)
     const historyResponse = await new Promise<{
       success: boolean;
       entries?: HistoryEntry[];
     }>((resolve) => {
-      if (isExtend) {
+      if (isExtend && extendSourceVideoId) {
         chrome.runtime.sendMessage(
-          { type: ExtendStorageMessageType.GET_EXTEND_HISTORY, videoId: sourceImageId },
+          {
+            type: ExtendStorageMessageType.GET_EXTEND_HISTORY,
+            videoId: extendSourceVideoId,
+          },
           (response) => resolve(response || { success: false }),
         );
       } else {
@@ -199,7 +255,9 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
       (a, b) => b.timestamp - a.timestamp,
     );
     const mostRecent = sorted[0];
-    logger.log(`${logPrefix}Resubmitting prompt: "${mostRecent.text.substring(0, 50)}..."`);
+    logger.log(
+      `${logPrefix}Resubmitting prompt: "${mostRecent.text.substring(0, 50)}..."`,
+    );
 
     // Fill and submit
     const submitResult = fillAndSubmitVideo(mostRecent.text);
@@ -211,8 +269,8 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
     }
 
     // Increment submission counter (use appropriate history)
-    if (isExtend) {
-      await saveToExtendHistory(sourceImageId, mostRecent.text);
+    if (isExtend && extendSourceVideoId) {
+      await saveToExtendHistory(extendSourceVideoId, mostRecent.text);
     } else {
       await saveToPostHistory(sourceImageId, mostRecent.text);
     }
@@ -250,6 +308,14 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
       break;
     }
 
+    // Capture the expected post ID now that generation has started
+    // (URL changes to new UUID when generation begins)
+    const newPostId = getCurrentPostId();
+    if (newPostId !== context.initialPostId) {
+      context.expectedPostId = newPostId;
+      logger.log(`${logPrefix}Expected post ID: ${context.expectedPostId}`);
+    }
+
     // Update state: waiting for result
     autosubmitState = {
       status: "running",
@@ -260,11 +326,13 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
     broadcastAutosubmitStatus();
 
     // Wait for outcome (success, moderated, or rate limited)
+    // Use context-aware detection to catch moderation-by-removal scenarios
     logger.log("Waiting for generation outcome...");
-    const outcome = await waitForOutcome(
+    const outcome = await waitForOutcomeWithContext(
       ["success", "moderated", "rate_limited"],
       ATTEMPT_TIMEOUT_MS,
       signal,
+      context,
     );
 
     if (signal.aborted) break;
@@ -272,11 +340,34 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
     if (!outcome) {
       // Timeout - treat like moderated, retry if attempts remain
       if (attempt < maxRetries) {
-        logger.log(`Timeout on attempt ${attempt}, retrying...`);
+        logger.log(`${logPrefix}Timeout on attempt ${attempt}, retrying...`);
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+
+        // For extend mode, recover before retrying
+        if (isExtend && extendSourceVideoId) {
+          logger.log(
+            `${logPrefix}Recovering extend mode for video: ${extendSourceVideoId}`,
+          );
+          const recoveryResult =
+            await recoverExtendModeForVideo(extendSourceVideoId);
+          if (!recoveryResult.success) {
+            logger.error(
+              `${logPrefix}Failed to recover extend mode: ${recoveryResult.error}`,
+            );
+            autosubmitState = {
+              status: "stopped",
+              reason: "cancelled",
+              attempt,
+            };
+            broadcastAutosubmitStatus();
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+
         continue;
       } else {
-        logger.log("Timeout, max retries reached");
+        logger.log(`${logPrefix}Timeout, max retries reached`);
         autosubmitState = { status: "stopped", reason: "timeout", attempt };
         broadcastAutosubmitStatus();
         break;
@@ -301,11 +392,35 @@ async function runAutosubmit(maxRetries: number, isExtend: boolean = false): Pro
 
     if (outcome.type === "moderated") {
       if (attempt < maxRetries) {
-        logger.log(`Moderated, retrying in ${RETRY_DELAY_MS}ms...`);
+        logger.log(`${logPrefix}Moderated, retrying in ${RETRY_DELAY_MS}ms...`);
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+
+        // For extend mode, we need to recover: navigate back to source video and re-enter extend mode
+        if (isExtend && extendSourceVideoId) {
+          logger.log(
+            `${logPrefix}Recovering extend mode for video: ${extendSourceVideoId}`,
+          );
+          const recoveryResult =
+            await recoverExtendModeForVideo(extendSourceVideoId);
+          if (!recoveryResult.success) {
+            logger.error(
+              `${logPrefix}Failed to recover extend mode: ${recoveryResult.error}`,
+            );
+            autosubmitState = {
+              status: "stopped",
+              reason: "cancelled",
+              attempt,
+            };
+            broadcastAutosubmitStatus();
+            break;
+          }
+          // Brief delay after recovery before retrying
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+
         continue; // Next attempt
       } else {
-        logger.log("Moderated, max retries reached");
+        logger.log(`${logPrefix}Moderated, max retries reached`);
         autosubmitState = {
           status: "stopped",
           reason: "max_retries",
@@ -532,7 +647,10 @@ async function saveToPostHistory(postId: string, text: string): Promise<void> {
 }
 
 /** Saves an extend prompt to history via background script. */
-async function saveToExtendHistory(videoId: string, text: string): Promise<void> {
+async function saveToExtendHistory(
+  videoId: string,
+  text: string,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
       { type: ExtendStorageMessageType.SAVE_TO_EXTEND_HISTORY, videoId, text },
@@ -540,7 +658,11 @@ async function saveToExtendHistory(videoId: string, text: string): Promise<void>
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else if (response?.success) {
-          logger.log("[extend] Saved to extend history:", videoId, text.substring(0, 30));
+          logger.log(
+            "[extend] Saved to extend history:",
+            videoId,
+            text.substring(0, 30),
+          );
           resolve();
         } else {
           reject(new Error(response?.error || "Unknown error"));
@@ -679,7 +801,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           1000,
         );
         if (!exitBtn) {
-          sendResponse({ success: false, error: "Extend mode did not activate" });
+          sendResponse({
+            success: false,
+            error: "Extend mode did not activate",
+          });
           return;
         }
         await new Promise((r) => setTimeout(r, 100));
@@ -702,13 +827,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === PromptMessageType.FILL_AND_SUBMIT_EXTEND) {
     (async () => {
-      const videoId = getSourceImageId();
+      // Use getPostId() for extend video - we want the VIDEO's UUID from the URL,
+      // not the source image's UUID. This must match what autosubmit uses.
+      const videoId = getPostId();
       if (!videoId) {
         sendResponse({ success: false, error: "No video ID" });
         return;
       }
 
-      logger.log("[extend] FILL_AND_SUBMIT_EXTEND:", message.text.substring(0, 30));
+      logger.log(
+        "[extend] FILL_AND_SUBMIT_EXTEND:",
+        message.text.substring(0, 30),
+      );
 
       // Save to extend history
       try {
@@ -726,7 +856,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === PromptMessageType.SUBMIT_FROM_CLIPBOARD_EXTEND) {
     (async () => {
-      const videoId = getSourceImageId();
+      // Use getPostId() for extend video - we want the VIDEO's UUID from the URL,
+      // not the source image's UUID. This must match what autosubmit uses.
+      const videoId = getPostId();
       if (!videoId) {
         sendResponse({ success: false, error: "No video ID" });
         return;
@@ -741,7 +873,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return;
         }
 
-        logger.log("[extend] SUBMIT_FROM_CLIPBOARD_EXTEND:", trimmed.substring(0, 30));
+        logger.log(
+          "[extend] SUBMIT_FROM_CLIPBOARD_EXTEND:",
+          trimmed.substring(0, 30),
+        );
 
         // Save to extend history
         try {
@@ -764,7 +899,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   // Autosubmit message handlers
   if (message.type === AutosubmitMessageType.START) {
     const { maxRetries, isExtend } = message;
-    logger.log(`Received autosubmit:start with maxRetries=${maxRetries}, isExtend=${isExtend}`);
+    logger.log(
+      `Received autosubmit:start with maxRetries=${maxRetries}, isExtend=${isExtend}`,
+    );
 
     // Run asynchronously
     (async () => {

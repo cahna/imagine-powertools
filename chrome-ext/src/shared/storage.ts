@@ -157,7 +157,9 @@ export async function getAllExtendHistory(): Promise<ExtendHistory> {
 }
 
 /** Retrieves extend history entries for a specific video ID. */
-export async function getExtendHistory(videoId: string): Promise<HistoryEntry[]> {
+export async function getExtendHistory(
+  videoId: string,
+): Promise<HistoryEntry[]> {
   return db.getExtendEntries(videoId);
 }
 

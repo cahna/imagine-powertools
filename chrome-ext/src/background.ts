@@ -222,7 +222,9 @@ async function getMostRecentHistoryEntry(
 // =============================================================================
 
 /** Retrieves extend history with LRU caching for fast repeated access. */
-async function getCachedExtendHistory(videoId: string): Promise<HistoryEntry[]> {
+async function getCachedExtendHistory(
+  videoId: string,
+): Promise<HistoryEntry[]> {
   const cached = extendCacheGet(videoId);
   if (cached !== null) {
     return cached;
@@ -348,7 +350,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       (async () => {
         try {
           const entries = await getCachedExtendHistory(message.videoId);
-          logger.log("[extend] getExtendHistory:", message.videoId, entries.length, "entries");
+          logger.log(
+            "[extend] getExtendHistory:",
+            message.videoId,
+            entries.length,
+            "entries",
+          );
           sendResponse({ success: true, entries });
         } catch (error) {
           logger.error("[extend] storage:getExtendHistory failed:", error);
@@ -362,7 +369,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       (async () => {
         try {
           await cachedSaveToExtendHistory(message.videoId, message.text);
-          logger.log("[extend] saveToExtendHistory:", message.videoId, message.text.substring(0, 30));
+          logger.log(
+            "[extend] saveToExtendHistory:",
+            message.videoId,
+            message.text.substring(0, 30),
+          );
           sendResponse({ success: true });
         } catch (error) {
           logger.error("[extend] storage:saveToExtendHistory failed:", error);
@@ -375,11 +386,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case ExtendStorageMessageType.DELETE_FROM_EXTEND_HISTORY: {
       (async () => {
         try {
-          await cachedDeleteFromExtendHistory(message.videoId, message.timestamp);
-          logger.log("[extend] deleteFromExtendHistory:", message.videoId, message.timestamp);
+          await cachedDeleteFromExtendHistory(
+            message.videoId,
+            message.timestamp,
+          );
+          logger.log(
+            "[extend] deleteFromExtendHistory:",
+            message.videoId,
+            message.timestamp,
+          );
           sendResponse({ success: true });
         } catch (error) {
-          logger.error("[extend] storage:deleteFromExtendHistory failed:", error);
+          logger.error(
+            "[extend] storage:deleteFromExtendHistory failed:",
+            error,
+          );
           sendResponse({ success: false, error: String(error) });
         }
       })();
@@ -393,7 +414,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Prevent concurrent autosubmits on the same tab
         const existingJob = activeJobs.get(tabId);
         if (existingJob && existingJob.state.status === "running") {
-          logger.log(`[jobs] Autosubmit already running on tab ${tabId}, ignoring`);
+          logger.log(
+            `[jobs] Autosubmit already running on tab ${tabId}, ignoring`,
+          );
           sendResponse({ success: false, error: "Autosubmit already running" });
           break;
         }
@@ -792,7 +815,10 @@ chrome.commands.onCommand.addListener(async (command) => {
           return;
         }
 
-        logger.log("[extend] Re-submitting extend prompt:", entry.text.substring(0, 50) + "...");
+        logger.log(
+          "[extend] Re-submitting extend prompt:",
+          entry.text.substring(0, 50) + "...",
+        );
 
         // Update extend history and invalidate cache
         await cachedSaveToExtendHistory(videoId, entry.text);
@@ -805,7 +831,10 @@ chrome.commands.onCommand.addListener(async (command) => {
           });
 
           if (result && !result.success) {
-            logger.error("[extend] Fill and submit extend failed:", result.error);
+            logger.error(
+              "[extend] Fill and submit extend failed:",
+              result.error,
+            );
           }
         } catch (error) {
           logger.error("[extend] Failed to send fillAndSubmitExtend:", error);
@@ -848,10 +877,16 @@ chrome.commands.onCommand.addListener(async (command) => {
           });
 
           if (result && !result.success) {
-            logger.error("[extend] Submit from clipboard extend failed:", result.error);
+            logger.error(
+              "[extend] Submit from clipboard extend failed:",
+              result.error,
+            );
           }
         } catch (error) {
-          logger.error("[extend] Failed to send submitFromClipboardExtend:", error);
+          logger.error(
+            "[extend] Failed to send submitFromClipboardExtend:",
+            error,
+          );
         }
       } else {
         // Normal mode: use post clipboard handler

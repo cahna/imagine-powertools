@@ -252,7 +252,9 @@ export async function clickVideoOption(
     let displayOption = option;
     if (inExtendMode && (option === "6s" || option === "10s")) {
       displayOption = "+" + option;
-      logger.log(`[extend] Transformed duration option: ${option} -> ${displayOption}`);
+      logger.log(
+        `[extend] Transformed duration option: ${option} -> ${displayOption}`,
+      );
     }
 
     // Check if radiogroup is already visible
@@ -323,12 +325,18 @@ export async function clickVideoOption(
 // Extend Video Helpers
 // =============================================================================
 
-// Check if the UI is currently in "extend video" mode
+/**
+ * Check if the UI is currently in "extend video" mode.
+ * Detects the "Extend video" placeholder text in the tiptap editor,
+ * which is always present in extend mode regardless of focus state.
+ */
 export function isInExtendMode(): boolean {
-  const exitBtn = document.querySelector(
-    'button[aria-label="Exit extend mode"]',
+  // Check for the "Extend video" placeholder in the editor
+  // This is a <p> element inside the tiptap editor with data-placeholder="Extend video"
+  const extendPlaceholder = document.querySelector(
+    '[data-placeholder="Extend video"]',
   );
-  return exitBtn !== null;
+  return extendPlaceholder !== null;
 }
 
 // Click the Make video button
@@ -343,12 +351,73 @@ export function clickMakeVideoButton(): { success: boolean; error?: string } {
   return { success: true };
 }
 
+/**
+ * Recovers extend mode for a specific video after moderation.
+ * 1. Navigates to the video in the carousel
+ * 2. Waits for the video to load
+ * 3. Enters extend mode
+ */
+export async function recoverExtendModeForVideo(
+  videoId: string,
+): Promise<{ success: boolean; error?: string }> {
+  // Step 1: Navigate to the source video in the carousel
+  if (!selectCarouselItemByVideoId(videoId)) {
+    return {
+      success: false,
+      error: `Could not find video ${videoId} in carousel`,
+    };
+  }
+
+  // Step 2: Wait for the video to load (poll for up to 3 seconds)
+  let outcome: GenerationOutcome = { type: "unknown" };
+  for (let i = 0; i < 6; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    outcome = detectGenerationOutcome();
+    logger.log(
+      `recoverExtendModeForVideo: attempt ${i + 1}, state=${outcome.type}`,
+    );
+    if (outcome.type === "success") {
+      break;
+    }
+  }
+
+  // Verify we're now showing a valid video (not moderated)
+  if (outcome.type !== "success") {
+    return {
+      success: false,
+      error: `Video ${videoId} is not valid (state: ${outcome.type})`,
+    };
+  }
+
+  // Extra delay for UI to fully settle after carousel selection
+  logger.log("recoverExtendModeForVideo: waiting for UI to settle");
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  // Step 3: Enter extend mode
+  const extendResult = await clickExtendVideoFromMenu();
+  if (!extendResult.success) {
+    return extendResult;
+  }
+
+  // Wait for extend mode to activate (check for "Extend video" placeholder)
+  const extendPlaceholder = await waitForElement(
+    '[data-placeholder="Extend video"]',
+    5000,
+  );
+  if (!extendPlaceholder) {
+    return { success: false, error: "Extend mode did not activate" };
+  }
+
+  logger.log(`Recovered extend mode for video: ${videoId}`);
+  return { success: true };
+}
+
 // Open the "More options" menu and click "Extend video"
 export async function clickExtendVideoFromMenu(): Promise<{
   success: boolean;
   error?: string;
 }> {
-  // Import detectGenerationOutcome is already available in this file
+  logger.log("clickExtendVideoFromMenu: starting");
 
   // 1. Check for successful video first
   const outcome = detectGenerationOutcome();
@@ -369,6 +438,7 @@ export async function clickExtendVideoFromMenu(): Promise<{
 
   // 3. Check if menu is already open
   const isOpen = moreOptionsBtn.getAttribute("aria-expanded") === "true";
+  logger.log(`clickExtendVideoFromMenu: menu isOpen=${isOpen}`);
 
   if (!isOpen) {
     // Open menu with pointer events (like clickMoodOptionFromMenu)
@@ -406,13 +476,47 @@ export async function clickExtendVideoFromMenu(): Promise<{
   // 5. Find and click "Extend video" menuitem
   const menuItem = findMenuItemByText("Extend video");
   if (!menuItem) {
+    // Log available menu items for debugging
+    const allItems = document.querySelectorAll(
+      "[data-radix-menu-content] [role='menuitem']",
+    );
+    const itemTexts = Array.from(allItems)
+      .map((el) => el.textContent?.trim())
+      .filter(Boolean);
+    logger.log(`Available menu items: ${JSON.stringify(itemTexts)}`);
     return { success: false, error: "Extend video menu item not found" };
   }
-  (menuItem as HTMLElement).click();
+
+  logger.log(
+    `Clicking Extend video menu item: "${(menuItem as HTMLElement).textContent?.trim()}"`,
+  );
+  // Use pointer events for more realistic click (like menu open)
+  const menuItemEl = menuItem as HTMLElement;
+  menuItemEl.dispatchEvent(
+    new PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      pointerType: "mouse",
+    }),
+  );
+  menuItemEl.dispatchEvent(
+    new PointerEvent("pointerup", {
+      bubbles: true,
+      cancelable: true,
+      pointerType: "mouse",
+    }),
+  );
+  menuItemEl.dispatchEvent(
+    new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
 
   // 6. Wait for UI animation to complete
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
+  logger.log("clickExtendVideoFromMenu completed");
   return { success: true };
 }
 
@@ -456,12 +560,25 @@ export function detectGenerationOutcome(): GenerationOutcome {
     return { type: "generating" };
   }
 
-  // Check for moderated result
+  // Check for moderated result - multiple patterns
+  // Pattern 1: Original img[alt="Moderated"]
   const moderatedImg = document.querySelector<HTMLImageElement>(
     'img[alt="Moderated"]',
   );
   if (moderatedImg) {
-    logger.log("Detected: moderated");
+    logger.log("Detected: moderated (img alt)");
+    return { type: "moderated" };
+  }
+
+  // Pattern 2: Large eye-off icon in preview area (moderated carousel item selected)
+  if (isPreviewAreaModerated()) {
+    logger.log("Detected: moderated (preview eye-off)");
+    return { type: "moderated" };
+  }
+
+  // Pattern 3: Selected carousel item has eye-off icon
+  if (isSelectedCarouselItemModerated()) {
+    logger.log("Detected: moderated (carousel eye-off)");
     return { type: "moderated" };
   }
 
@@ -475,6 +592,66 @@ export function detectGenerationOutcome(): GenerationOutcome {
   }
 
   return { type: "unknown" };
+}
+
+// =============================================================================
+// Context-Aware Generation Detection
+// =============================================================================
+
+export interface GenerationContext {
+  initialPostId: string | null;
+  initialCarouselCount: number;
+  expectedPostId: string | null; // Set when generation starts and URL changes
+}
+
+/** Create initial context before starting a generation attempt. */
+export function captureGenerationContext(): GenerationContext {
+  return {
+    initialPostId: getCurrentPostId(),
+    initialCarouselCount: getCarouselItemCount(),
+    expectedPostId: null,
+  };
+}
+
+/**
+ * Detect generation outcome with context validation.
+ * Returns 'moderated' if the URL reverted or carousel item was removed.
+ */
+export function detectGenerationOutcomeWithContext(
+  context: GenerationContext,
+): GenerationOutcome {
+  // First, run standard detection
+  const outcome = detectGenerationOutcome();
+
+  // If we detected generating, rate_limited, or moderated - trust it
+  if (outcome.type !== "success" && outcome.type !== "unknown") {
+    return outcome;
+  }
+
+  // For "success" - validate against context
+  if (outcome.type === "success" && context.expectedPostId) {
+    const currentPostId = getCurrentPostId();
+
+    // If URL reverted to a different post, this is NOT our success
+    if (currentPostId !== context.expectedPostId) {
+      logger.log(
+        `Detected: moderated (URL reverted from ${context.expectedPostId} to ${currentPostId})`,
+      );
+      return { type: "moderated" };
+    }
+  }
+
+  // For "unknown" with context - check if carousel item was removed
+  if (outcome.type === "unknown" && context.expectedPostId) {
+    const currentPostId = getCurrentPostId();
+    if (currentPostId !== context.expectedPostId) {
+      // URL changed away from our generation - likely moderated and removed
+      logger.log("Detected: moderated (unexpected URL change)");
+      return { type: "moderated" };
+    }
+  }
+
+  return outcome;
 }
 
 // Wait for a specific outcome with timeout and abort signal support
@@ -534,9 +711,157 @@ export function waitForOutcome(
   });
 }
 
+/** Wait for a specific outcome with context validation for more accurate detection. */
+export function waitForOutcomeWithContext(
+  targetTypes: GenerationOutcome["type"][],
+  timeout: number,
+  signal: AbortSignal | undefined,
+  context: GenerationContext,
+): Promise<GenerationOutcome | null> {
+  return new Promise((resolve) => {
+    // Check if already aborted
+    if (signal?.aborted) {
+      logger.log("waitForOutcomeWithContext: already aborted");
+      resolve(null);
+      return;
+    }
+
+    // Check immediately first
+    const immediate = detectGenerationOutcomeWithContext(context);
+    if (targetTypes.includes(immediate.type)) {
+      logger.log(
+        `waitForOutcomeWithContext: immediate match (${immediate.type})`,
+      );
+      resolve(immediate);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      logger.log("waitForOutcomeWithContext: timeout");
+      observer.disconnect();
+      signal?.removeEventListener("abort", abortHandler);
+      resolve(null);
+    }, timeout);
+
+    const abortHandler = () => {
+      logger.log("waitForOutcomeWithContext: aborted");
+      clearTimeout(timeoutId);
+      observer.disconnect();
+      resolve(null);
+    };
+
+    signal?.addEventListener("abort", abortHandler);
+
+    const observer = new MutationObserver(() => {
+      const outcome = detectGenerationOutcomeWithContext(context);
+      if (targetTypes.includes(outcome.type)) {
+        logger.log(`waitForOutcomeWithContext: match found (${outcome.type})`);
+        clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", abortHandler);
+        observer.disconnect();
+        resolve(outcome);
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  });
+}
+
 // =============================================================================
 // Video Carousel Navigation
 // =============================================================================
+
+/** Get post ID from current URL pathname. */
+export function getCurrentPostId(): string | null {
+  const match = window.location.pathname.match(/^\/imagine\/post\/([^/]+)/);
+  return match ? match[1] : null;
+}
+
+/** Count carousel items in the video carousel. */
+export function getCarouselItemCount(): number {
+  const container = document.querySelector("div.snap-y.snap-mandatory");
+  if (!container) return 0;
+  return container.querySelectorAll("button.snap-center").length;
+}
+
+/** Check if the currently selected carousel item has the moderated (eye-off) icon. */
+export function isSelectedCarouselItemModerated(): boolean {
+  const container = document.querySelector("div.snap-y.snap-mandatory");
+  if (!container) return false;
+
+  const buttons = container.querySelectorAll("button.snap-center");
+  for (const btn of buttons) {
+    if (btn.classList.contains("ring-fg-primary")) {
+      // Check for eye-off icon (lucide-eye-off class)
+      return btn.querySelector(".lucide-eye-off") !== null;
+    }
+  }
+  return false;
+}
+
+/** Check if the main preview area shows a moderated state (large eye-off icon). */
+export function isPreviewAreaModerated(): boolean {
+  // Check for the large eye-off icon in the preview area
+  const eyeOffIcon = document.querySelector(".lucide-eye-off.size-24");
+  return eyeOffIcon !== null;
+}
+
+/**
+ * Finds and clicks a carousel item by matching video ID in its thumbnail URL.
+ * Video IDs appear in patterns like:
+ * - .../generated/{uuid}/preview_image.jpg
+ * - .../share-videos/{uuid}_thumbnail.jpg
+ */
+export function selectCarouselItemByVideoId(videoId: string): boolean {
+  const container = document.querySelector("div.snap-y.snap-mandatory");
+  if (!container) return false;
+
+  const buttons = Array.from(
+    container.querySelectorAll("button.snap-center"),
+  ) as HTMLButtonElement[];
+
+  for (const btn of buttons) {
+    const img = btn.querySelector("img");
+    if (!img?.src) continue;
+
+    // Check if this thumbnail's URL contains the video ID
+    if (img.src.includes(videoId)) {
+      btn.click();
+      logger.log(`Selected carousel item for video: ${videoId}`);
+      return true;
+    }
+  }
+
+  logger.log(`Could not find carousel item for video: ${videoId}`);
+  return false;
+}
+
+/** Selects the first non-moderated carousel item. Returns true if successful. */
+export function selectFirstValidCarouselItem(): boolean {
+  const container = document.querySelector("div.snap-y.snap-mandatory");
+  if (!container) return false;
+
+  const buttons = Array.from(
+    container.querySelectorAll("button.snap-center"),
+  ) as HTMLButtonElement[];
+
+  for (const btn of buttons) {
+    // Skip moderated items (have eye-off icon)
+    if (btn.querySelector(".lucide-eye-off")) {
+      continue;
+    }
+    // Found a valid item, click it
+    btn.click();
+    logger.log("Selected first valid carousel item");
+    return true;
+  }
+
+  return false;
+}
 
 /** Navigates up/down through the video carousel on post pages. */
 export function navigateVideoCarousel(direction: "prev" | "next"): {

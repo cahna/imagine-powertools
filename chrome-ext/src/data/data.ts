@@ -534,9 +534,12 @@ async function init(): Promise<void> {
       const parsed = JSON.parse(text);
 
       // Use correct validation and import functions based on current database type
-      const validateFn = currentDbType === "video" ? validatePostHistory : validateExtendHistory;
-      const mergeFn = currentDbType === "video" ? mergeHistories : mergeExtendHistories;
-      const importFn = currentDbType === "video" ? bulkImportHistory : bulkImportExtendHistory;
+      const validateFn =
+        currentDbType === "video" ? validatePostHistory : validateExtendHistory;
+      const mergeFn =
+        currentDbType === "video" ? mergeHistories : mergeExtendHistories;
+      const importFn =
+        currentDbType === "video" ? bulkImportHistory : bulkImportExtendHistory;
 
       if (!validateFn(parsed)) {
         showStatus("Invalid data format.", true);
@@ -584,9 +587,12 @@ async function init(): Promise<void> {
       const parsed = JSON.parse(json);
 
       // Use correct validation and import functions based on current database type
-      const validateFn = currentDbType === "video" ? validatePostHistory : validateExtendHistory;
-      const mergeFn = currentDbType === "video" ? mergeHistories : mergeExtendHistories;
-      const importFn = currentDbType === "video" ? bulkImportHistory : bulkImportExtendHistory;
+      const validateFn =
+        currentDbType === "video" ? validatePostHistory : validateExtendHistory;
+      const mergeFn =
+        currentDbType === "video" ? mergeHistories : mergeExtendHistories;
+      const importFn =
+        currentDbType === "video" ? bulkImportHistory : bulkImportExtendHistory;
 
       if (!validateFn(parsed)) {
         showStatus("Invalid data format.", true);
@@ -625,7 +631,9 @@ async function init(): Promise<void> {
   // Clear all
   elements.clearBtn?.addEventListener("click", async () => {
     const dbLabel = currentDbType === "video" ? "video" : "extend";
-    if (!confirm(`Delete ALL ${dbLabel} history data? This cannot be undone.`)) {
+    if (
+      !confirm(`Delete ALL ${dbLabel} history data? This cannot be undone.`)
+    ) {
       return;
     }
 
