@@ -642,6 +642,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const mode: Mode = response?.mode ?? "none";
     const sourceImageId: string | null = response?.sourceImageId ?? null;
+    const postId: string | null = response?.postId ?? null;
 
     if (modeBadge) {
       modeBadge.textContent = MODE_LABELS[mode];
@@ -656,9 +657,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const isExtendMode = mode === "post-extend";
     const isPostOrExtendMode = mode === "post" || isExtendMode;
 
+    // For extend mode, use postId (video UUID) for history; for post mode, use sourceImageId
+    const historyId = isExtendMode ? postId : sourceImageId;
+
     if (
       isPostOrExtendMode &&
-      sourceImageId &&
+      historyId &&
       postUi &&
       postForm &&
       postInput &&
@@ -684,13 +688,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           postInput.focus();
         },
         onDelete: async (entry) => {
-          await deleteHistoryFn(sourceImageId, entry.timestamp);
-          const updatedHistory = await getHistoryFn(sourceImageId);
+          await deleteHistoryFn(historyId, entry.timestamp);
+          const updatedHistory = await getHistoryFn(historyId);
           renderHistory(updatedHistory, historyList, historyOptions);
         },
       };
 
-      const history = await getHistoryFn(sourceImageId);
+      const history = await getHistoryFn(historyId);
       renderHistory(history, historyList, historyOptions);
 
       postForm.addEventListener("submit", async (e) => {
@@ -700,8 +704,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!text) return;
 
         // Save to history (handles duplicates by incrementing submitCount)
-        await saveHistoryFn(sourceImageId, text);
-        const updatedHistory = await getHistoryFn(sourceImageId);
+        await saveHistoryFn(historyId, text);
+        const updatedHistory = await getHistoryFn(historyId);
         renderHistory(updatedHistory, historyList, historyOptions);
 
         postInput.value = "";
@@ -817,8 +821,8 @@ document.addEventListener("DOMContentLoaded", async () => {
           // First, submit the current prompt (like clicking Submit)
           const text = postInput.value.trim();
           if (text) {
-            await saveHistoryFn(sourceImageId, text);
-            const updatedHistory = await getHistoryFn(sourceImageId);
+            await saveHistoryFn(historyId, text);
+            const updatedHistory = await getHistoryFn(historyId);
             renderHistory(updatedHistory, historyList, historyOptions);
             postInput.value = "";
           }
@@ -849,7 +853,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         });
       }
-    } else if (isPostOrExtendMode && !sourceImageId && postUi && statusEl) {
+    } else if (isPostOrExtendMode && !historyId && postUi && statusEl) {
       statusEl.textContent = isExtendMode
         ? "Could not detect video ID"
         : "Could not detect source image";

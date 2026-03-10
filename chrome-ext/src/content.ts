@@ -463,8 +463,9 @@ function getPostId(): string | null {
 }
 
 /**
- * Extracts the source image UUID from the page by scanning img elements.
- * Prioritizes direct URLs over CDN URLs to identify the original source image.
+ * Extracts the source image/video UUID from the page.
+ * Checks images first (for image-to-video posts), then falls back to video src
+ * (for single-video posts without carousel).
  */
 function getSourceImageId(): string | null {
   // UUID pattern
@@ -508,6 +509,34 @@ function getSourceImageId(): string | null {
 
     if (uuidPattern.test(alt) && src.includes("imagine-public")) {
       return alt;
+    }
+  }
+
+  // Fourth pass: extract from video src or poster (for single-video posts without carousel)
+  const videos = document.querySelectorAll<HTMLVideoElement>("video");
+  for (const video of videos) {
+    // Check video src: share-videos/{uuid}.mp4
+    const src = video.src || "";
+    const shareMatch = src.match(/share-videos\/([0-9a-f-]+)\.mp4/i);
+    if (shareMatch && shareMatch[1] && uuidPattern.test(shareMatch[1])) {
+      return shareMatch[1];
+    }
+    // Check for generated video pattern
+    const generatedMatch = src.match(
+      /generated\/([0-9a-f-]+)\/generated_video\.mp4/i,
+    );
+    if (
+      generatedMatch &&
+      generatedMatch[1] &&
+      uuidPattern.test(generatedMatch[1])
+    ) {
+      return generatedMatch[1];
+    }
+    // Check video poster: share-videos/{uuid}_thumbnail.jpg
+    const poster = video.poster || "";
+    const posterMatch = poster.match(/share-videos\/([0-9a-f-]+)_thumbnail/i);
+    if (posterMatch && posterMatch[1] && uuidPattern.test(posterMatch[1])) {
+      return posterMatch[1];
     }
   }
 
