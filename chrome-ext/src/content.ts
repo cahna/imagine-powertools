@@ -2,13 +2,9 @@
 
 import {
   type Mode,
-  type GenerationOutcome,
-  type GenerationContext,
   detectMode,
   fillAndSubmitVideo,
   clickVideoOption,
-  setReactInputValue,
-  detectGenerationOutcome,
   waitForOutcome,
   waitForOutcomeWithContext,
   waitForElement,
@@ -24,6 +20,13 @@ import {
   recoverExtendModeForVideo,
 } from "./content.core";
 import { logger } from "./shared/logger";
+import { createActor, type Actor } from "xstate";
+import {
+  autosubmitMachine,
+  type AutosubmitEvent,
+  type StopReason,
+} from "./machines/autosubmit.machine";
+import { TIMEOUTS } from "./config";
 import {
   ContentMessageType,
   StorageMessageType,
@@ -38,9 +41,10 @@ export type { Mode };
 let currentMode: Mode = "none";
 
 // =============================================================================
-// Autosubmit Feature State
+// Autosubmit Feature State (XState Machine)
 // =============================================================================
 
+/** Legacy state type for backward compatibility with popup/background communication. */
 type AutosubmitState =
   | { status: "idle" }
   | {
@@ -61,19 +65,87 @@ type AutosubmitState =
       attempt: number;
     };
 
-let autosubmitState: AutosubmitState = { status: "idle" };
+let autosubmitActor: Actor<typeof autosubmitMachine> | null = null;
 let autosubmitAbortController: AbortController | null = null;
 
-const ATTEMPT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per attempt
-const RETRY_DELAY_MS = 1000; // 1 second delay before retry
-const GENERATION_START_TIMEOUT_MS = 10000; // 10 seconds to wait for generation to start
+/** Converts XState machine state to legacy AutosubmitState for popup/background compatibility. */
+function getAutosubmitState(): AutosubmitState {
+  if (!autosubmitActor) {
+    return { status: "idle" };
+  }
+
+  const snapshot = autosubmitActor.getSnapshot();
+  const { value, context } = snapshot;
+
+  switch (value) {
+    case "idle":
+      return { status: "idle" };
+
+    case "submitting":
+      return {
+        status: "running",
+        attempt: context.attempt,
+        maxRetries: context.maxRetries,
+        phase: "submitting",
+      };
+
+    case "waitingForGeneration":
+      return {
+        status: "running",
+        attempt: context.attempt,
+        maxRetries: context.maxRetries,
+        phase: "generating",
+      };
+
+    case "generating":
+    case "recovering":
+    case "retrying":
+      return {
+        status: "running",
+        attempt: context.attempt,
+        maxRetries: context.maxRetries,
+        phase: "waiting",
+      };
+
+    case "success":
+      return { status: "success", attempt: context.attempt };
+
+    case "stopped": {
+      type LegacyReason = "cancelled" | "rate_limited" | "max_retries" | "timeout" | "navigated";
+      const reasonMap: Record<StopReason, LegacyReason> = {
+        cancelled: "cancelled",
+        navigated: "navigated",
+        submit_failed: "cancelled",
+        rate_limited: "rate_limited",
+        timeout: "timeout",
+        max_retries: "max_retries",
+        recovery_failed: "cancelled",
+      };
+      return {
+        status: "stopped" as const,
+        reason: context.stopReason ? reasonMap[context.stopReason] : ("cancelled" as LegacyReason),
+        attempt: context.attempt,
+      };
+    }
+
+    default:
+      return { status: "idle" };
+  }
+}
+
+/** Sends an event to the autosubmit state machine. */
+function sendAutosubmitEvent(event: AutosubmitEvent): void {
+  if (autosubmitActor) {
+    autosubmitActor.send(event);
+  }
+}
 
 /** Broadcasts current autosubmit state to popup (if open) via runtime messaging. */
 function broadcastAutosubmitStatus(): void {
   chrome.runtime
     .sendMessage({
       type: AutosubmitMessageType.STATUS,
-      state: autosubmitState,
+      state: getAutosubmitState(),
     })
     .catch(() => {
       // Popup may be closed, ignore errors
@@ -85,7 +157,9 @@ async function runAutosubmit(
   maxRetries: number,
   isExtend: boolean = false,
 ): Promise<void> {
-  if (autosubmitState.status === "running") {
+  // Check if already running using machine state
+  const currentState = getAutosubmitState();
+  if (currentState.status === "running") {
     logger.log("Autosubmit already running, ignoring");
     return;
   }
@@ -117,12 +191,12 @@ async function runAutosubmit(
     );
     if (!selectFirstValidCarouselItem()) {
       logger.error(`${logPrefix}No valid carousel items found`);
-      autosubmitState = { status: "stopped", reason: "cancelled", attempt: 0 };
+      // Don't start machine - just bail early
       broadcastAutosubmitStatus();
       return;
     }
     // Brief delay to let the page update after navigation
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.uiSettle));
   }
 
   // Cache the source image ID at the start - this must be fetched BEFORE any moderation
@@ -132,10 +206,26 @@ async function runAutosubmit(
     logger.error(
       `${logPrefix}Could not get source image ID - is a valid video selected?`,
     );
-    autosubmitState = { status: "stopped", reason: "cancelled", attempt: 0 };
+    // Don't start machine - just bail early
     broadcastAutosubmitStatus();
     return;
   }
+
+  // Create and start the XState machine actor
+  autosubmitActor = createActor(autosubmitMachine);
+  autosubmitActor.subscribe((state) => {
+    logger.log(`[machine] State: ${state.value}, attempt: ${state.context.attempt}`);
+    broadcastAutosubmitStatus();
+  });
+  autosubmitActor.start();
+
+  // Send START event to machine
+  sendAutosubmitEvent({
+    type: "START",
+    sourceImageId,
+    maxRetries,
+    isExtend,
+  });
 
   // Get prompt text for job registration
   const historyForJob = await new Promise<{
@@ -195,8 +285,7 @@ async function runAutosubmit(
       logger.log(
         `${logPrefix}No longer in ${expectedMode} mode (now ${currentModeCheck}), stopping`,
       );
-      autosubmitState = { status: "stopped", reason: "navigated", attempt };
-      broadcastAutosubmitStatus();
+      sendAutosubmitEvent({ type: "NAVIGATED" });
       break;
     }
 
@@ -206,14 +295,6 @@ async function runAutosubmit(
       `${logPrefix}Context: postId=${context.initialPostId}, carouselCount=${context.initialCarouselCount}`,
     );
 
-    // Update state: submitting
-    autosubmitState = {
-      status: "running",
-      attempt,
-      maxRetries,
-      phase: "submitting",
-    };
-    broadcastAutosubmitStatus();
     logger.log(
       `${logPrefix}Autosubmit attempt ${attempt}/${maxRetries} - submitting`,
     );
@@ -245,8 +326,7 @@ async function runAutosubmit(
 
     if (!historyResponse.success || !historyResponse.entries?.length) {
       logger.error(`${logPrefix}No history entries to resubmit`);
-      autosubmitState = { status: "stopped", reason: "cancelled", attempt };
-      broadcastAutosubmitStatus();
+      sendAutosubmitEvent({ type: "SUBMIT_FAILED" });
       break;
     }
 
@@ -263,10 +343,12 @@ async function runAutosubmit(
     const submitResult = fillAndSubmitVideo(mostRecent.text);
     if (!submitResult.success) {
       logger.error(`${logPrefix}Fill and submit failed:`, submitResult.error);
-      autosubmitState = { status: "stopped", reason: "cancelled", attempt };
-      broadcastAutosubmitStatus();
+      sendAutosubmitEvent({ type: "SUBMIT_FAILED" });
       break;
     }
+
+    // Submission successful, tell machine
+    sendAutosubmitEvent({ type: "SUBMITTED" });
 
     // Increment submission counter (use appropriate history)
     if (isExtend && extendSourceVideoId) {
@@ -275,20 +357,11 @@ async function runAutosubmit(
       await saveToPostHistory(sourceImageId, mostRecent.text);
     }
 
-    // Update state: generating
-    autosubmitState = {
-      status: "running",
-      attempt,
-      maxRetries,
-      phase: "generating",
-    };
-    broadcastAutosubmitStatus();
-
     // Wait for generation to start (look for "Generating" or rate limit)
     logger.log("Waiting for generation to start...");
     const startOutcome = await waitForOutcome(
       ["generating", "rate_limited"],
-      GENERATION_START_TIMEOUT_MS,
+      TIMEOUTS.generationStart,
       signal,
     );
 
@@ -296,17 +369,18 @@ async function runAutosubmit(
 
     if (startOutcome?.type === "rate_limited") {
       logger.log("Rate limited, stopping");
-      autosubmitState = { status: "stopped", reason: "rate_limited", attempt };
-      broadcastAutosubmitStatus();
+      sendAutosubmitEvent({ type: "RATE_LIMITED" });
       break;
     }
 
     if (!startOutcome || startOutcome.type !== "generating") {
       logger.log("Generation did not start, stopping");
-      autosubmitState = { status: "stopped", reason: "timeout", attempt };
-      broadcastAutosubmitStatus();
+      sendAutosubmitEvent({ type: "TIMEOUT" });
       break;
     }
+
+    // Generation started
+    sendAutosubmitEvent({ type: "GENERATING" });
 
     // Capture the expected post ID now that generation has started
     // (URL changes to new UUID when generation begins)
@@ -316,21 +390,12 @@ async function runAutosubmit(
       logger.log(`${logPrefix}Expected post ID: ${context.expectedPostId}`);
     }
 
-    // Update state: waiting for result
-    autosubmitState = {
-      status: "running",
-      attempt,
-      maxRetries,
-      phase: "waiting",
-    };
-    broadcastAutosubmitStatus();
-
     // Wait for outcome (success, moderated, or rate limited)
     // Use context-aware detection to catch moderation-by-removal scenarios
     logger.log("Waiting for generation outcome...");
     const outcome = await waitForOutcomeWithContext(
       ["success", "moderated", "rate_limited"],
-      ATTEMPT_TIMEOUT_MS,
+      TIMEOUTS.attemptTimeout,
       signal,
       context,
     );
@@ -341,7 +406,8 @@ async function runAutosubmit(
       // Timeout - treat like moderated, retry if attempts remain
       if (attempt < maxRetries) {
         logger.log(`${logPrefix}Timeout on attempt ${attempt}, retrying...`);
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        sendAutosubmitEvent({ type: "MODERATED" }); // Triggers retry logic in machine
+        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.retryDelay));
 
         // For extend mode, recover before retrying
         if (isExtend && extendSourceVideoId) {
@@ -354,22 +420,18 @@ async function runAutosubmit(
             logger.error(
               `${logPrefix}Failed to recover extend mode: ${recoveryResult.error}`,
             );
-            autosubmitState = {
-              status: "stopped",
-              reason: "cancelled",
-              attempt,
-            };
-            broadcastAutosubmitStatus();
+            sendAutosubmitEvent({ type: "RECOVERY_FAILED" });
             break;
           }
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          sendAutosubmitEvent({ type: "RECOVERED" });
+          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.uiSettle));
         }
 
+        sendAutosubmitEvent({ type: "RETRY" });
         continue;
       } else {
         logger.log(`${logPrefix}Timeout, max retries reached`);
-        autosubmitState = { status: "stopped", reason: "timeout", attempt };
-        broadcastAutosubmitStatus();
+        sendAutosubmitEvent({ type: "TIMEOUT" });
         break;
       }
     }
@@ -378,22 +440,23 @@ async function runAutosubmit(
 
     if (outcome.type === "success") {
       logger.log("Video generated successfully!");
-      autosubmitState = { status: "success", attempt };
-      broadcastAutosubmitStatus();
+      sendAutosubmitEvent({ type: "SUCCESS" });
       break;
     }
 
     if (outcome.type === "rate_limited") {
       logger.log("Rate limited, stopping");
-      autosubmitState = { status: "stopped", reason: "rate_limited", attempt };
-      broadcastAutosubmitStatus();
+      sendAutosubmitEvent({ type: "RATE_LIMITED" });
       break;
     }
 
     if (outcome.type === "moderated") {
+      // Send MODERATED event to machine - it will decide if we can retry
+      sendAutosubmitEvent({ type: "MODERATED" });
+
       if (attempt < maxRetries) {
-        logger.log(`${logPrefix}Moderated, retrying in ${RETRY_DELAY_MS}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        logger.log(`${logPrefix}Moderated, retrying in ${TIMEOUTS.retryDelay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.retryDelay));
 
         // For extend mode, we need to recover: navigate back to source video and re-enter extend mode
         if (isExtend && extendSourceVideoId) {
@@ -406,34 +469,31 @@ async function runAutosubmit(
             logger.error(
               `${logPrefix}Failed to recover extend mode: ${recoveryResult.error}`,
             );
-            autosubmitState = {
-              status: "stopped",
-              reason: "cancelled",
-              attempt,
-            };
-            broadcastAutosubmitStatus();
+            sendAutosubmitEvent({ type: "RECOVERY_FAILED" });
             break;
           }
+          sendAutosubmitEvent({ type: "RECOVERED" });
           // Brief delay after recovery before retrying
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.uiSettle));
         }
 
+        sendAutosubmitEvent({ type: "RETRY" });
         continue; // Next attempt
       } else {
         logger.log(`${logPrefix}Moderated, max retries reached`);
-        autosubmitState = {
-          status: "stopped",
-          reason: "max_retries",
-          attempt,
-        };
-        broadcastAutosubmitStatus();
+        // Machine already knows max_retries from the MODERATED event
         break;
       }
     }
   }
 
+  // Clean up
   autosubmitAbortController = null;
-  logger.log("Autosubmit finished, final state:", autosubmitState);
+  if (autosubmitActor) {
+    autosubmitActor.stop();
+    autosubmitActor = null;
+  }
+  logger.log("Autosubmit finished, final state:", getAutosubmitState());
 }
 
 /** Aborts the running autosubmit loop and updates state to cancelled. */
@@ -441,12 +501,7 @@ function cancelAutosubmit(): void {
   if (autosubmitAbortController) {
     logger.log("Cancelling autosubmit");
     autosubmitAbortController.abort();
-    autosubmitState = {
-      status: "stopped",
-      reason: "cancelled",
-      attempt:
-        autosubmitState.status === "running" ? autosubmitState.attempt : 0,
-    };
+    sendAutosubmitEvent({ type: "CANCEL" });
     broadcastAutosubmitStatus();
   }
 }
@@ -944,13 +999,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === AutosubmitMessageType.CANCEL) {
     logger.log("Received autosubmit:cancel");
     cancelAutosubmit();
-    sendResponse({ success: true, state: autosubmitState });
+    sendResponse({ success: true, state: getAutosubmitState() });
     return true;
   }
 
   if (message.type === AutosubmitMessageType.GET_STATE) {
-    logger.log("Received autosubmit:getState, state:", autosubmitState);
-    sendResponse({ state: autosubmitState });
+    const state = getAutosubmitState();
+    logger.log("Received autosubmit:getState, state:", state);
+    sendResponse({ state });
     return true;
   }
 

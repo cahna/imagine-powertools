@@ -2,8 +2,27 @@
 // These are imported by both content.ts and tests
 
 import { logger } from "./shared/logger";
+import { TIMEOUTS } from "./config";
+import {
+  NotificationsPage,
+  GenerationStatusPage,
+  VideoCarouselPage,
+  VideoPromptPage,
+  SettingsMenuPage,
+  type GenerationOutcome,
+} from "./pages";
+
+// Re-export GenerationOutcome type from PageObjects
+export type { GenerationOutcome };
 
 export type Mode = "favorites" | "results" | "post" | "post-extend" | "none";
+
+// Module-level PageObject instances (use global document by default)
+const notificationsPage = new NotificationsPage();
+const generationStatusPage = new GenerationStatusPage();
+const videoCarouselPage = new VideoCarouselPage();
+const videoPromptPage = new VideoPromptPage();
+const settingsMenuPage = new SettingsMenuPage();
 
 // Detect the current mode based on URL and page content
 export function detectMode(): Mode {
@@ -71,17 +90,9 @@ export function waitForElement(
   });
 }
 
-// Find a menu item by its text content
+/** Finds a menu item by its text content. */
 export function findMenuItemByText(text: string): Element | null {
-  const menuItems = document.querySelectorAll(
-    'div[role="menuitem"][data-radix-collection-item]',
-  );
-  for (const item of menuItems) {
-    if (item.textContent?.includes(text)) {
-      return item;
-    }
-  }
-  return null;
+  return settingsMenuPage.findMenuItem(text);
 }
 
 // Set value on a React-controlled input/textarea
@@ -124,111 +135,46 @@ export function setTiptapContent(element: HTMLElement, text: string): void {
   document.execCommand("insertText", false, text);
 }
 
-// Fill the video prompt and click the Make video button
-// Supports both old UI (textarea) and new UI (tiptap contenteditable)
+/** Fills the video prompt and clicks the Make video button. */
 export function fillAndSubmitVideo(text: string): {
   success: boolean;
   error?: string;
 } {
-  // Try new UI first: contenteditable div with tiptap ProseMirror
-  const contentEditable = document.querySelector<HTMLDivElement>(
-    'div.tiptap.ProseMirror[contenteditable="true"]',
-  );
-
-  if (contentEditable) {
-    setTiptapContent(contentEditable, text);
-  } else {
-    // Fallback to old UI: textarea
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Make a video"]',
-    );
-
-    if (!textarea) {
-      return { success: false, error: "Could not find video prompt input" };
-    }
-
-    setReactInputValue(textarea, text);
-  }
-
-  // Find and click the Make video button (same aria-label in both UIs)
-  const makeVideoBtn = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="Make video"]',
-  );
-
-  if (!makeVideoBtn) {
-    return { success: false, error: "Could not find Make video button" };
-  }
-
-  // Small delay to ensure React has processed the input
-  setTimeout(() => {
-    makeVideoBtn.click();
-  }, 50);
-
-  return { success: true };
+  return videoPromptPage.fillAndSubmit(text);
 }
 
-// Click a mood option from the Settings dropdown menu
+/** Clicks a mood option from the Settings dropdown menu. */
 export async function clickMoodOptionFromMenu(
   option: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const settingsBtn = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="Settings"]',
-  );
-
-  if (!settingsBtn) {
+  // Open menu if needed
+  if (!settingsMenuPage.openSettingsMenu()) {
     return { success: false, error: "Settings button not found" };
   }
 
-  // Check if menu is already open
-  const isOpen = settingsBtn.getAttribute("aria-expanded") === "true";
-
-  if (!isOpen) {
-    settingsBtn.focus();
-
-    // Dispatch pointer events (Radix UI uses these)
-    settingsBtn.dispatchEvent(
-      new PointerEvent("pointerdown", {
-        bubbles: true,
-        cancelable: true,
-        pointerType: "mouse",
-      }),
+  // Wait for menu to appear if it wasn't already open
+  if (!settingsMenuPage.isSettingsMenuOpen()) {
+    const menuContent = await waitForElement(
+      "[data-radix-menu-content]",
+      TIMEOUTS.menuWait,
     );
-    settingsBtn.dispatchEvent(
-      new PointerEvent("pointerup", {
-        bubbles: true,
-        cancelable: true,
-        pointerType: "mouse",
-      }),
-    );
-    settingsBtn.dispatchEvent(
-      new MouseEvent("click", {
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-
-    // Wait for menu to appear
-    const menuContent = await waitForElement("[data-radix-menu-content]", 1000);
     if (!menuContent) {
       return { success: false, error: "Settings menu did not open" };
     }
-
     // Small delay for menu animation
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) =>
+      setTimeout(resolve, TIMEOUTS.menuAnimation),
+    );
   }
 
-  // Capitalize first letter for matching (e.g., "spicy" -> "Spicy")
-  const moodText = option.charAt(0).toUpperCase() + option.slice(1);
-  const targetElement = findMenuItemByText(moodText);
-
-  if (!targetElement) {
+  // Click the mood option
+  if (!settingsMenuPage.clickMoodOption(option)) {
     return {
       success: false,
       error: `Mood option "${option}" not found in menu`,
     };
   }
 
-  (targetElement as HTMLElement).click();
   return { success: true };
 }
 
@@ -325,29 +271,16 @@ export async function clickVideoOption(
 // Extend Video Helpers
 // =============================================================================
 
-/**
- * Check if the UI is currently in "extend video" mode.
- * Detects the "Extend video" placeholder text in the tiptap editor,
- * which is always present in extend mode regardless of focus state.
- */
+/** Checks if the UI is currently in "extend video" mode. */
 export function isInExtendMode(): boolean {
-  // Check for the "Extend video" placeholder in the editor
-  // This is a <p> element inside the tiptap editor with data-placeholder="Extend video"
-  const extendPlaceholder = document.querySelector(
-    '[data-placeholder="Extend video"]',
-  );
-  return extendPlaceholder !== null;
+  return videoPromptPage.isInExtendMode();
 }
 
-// Click the Make video button
+/** Clicks the Make video button. */
 export function clickMakeVideoButton(): { success: boolean; error?: string } {
-  const makeBtn = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="Make video"]',
-  );
-  if (!makeBtn) {
+  if (!videoPromptPage.submit()) {
     return { success: false, error: "Make video button not found" };
   }
-  makeBtn.click();
   return { success: true };
 }
 
@@ -361,7 +294,7 @@ export async function recoverExtendModeForVideo(
   videoId: string,
 ): Promise<{ success: boolean; error?: string }> {
   // Step 1: Navigate to the source video in the carousel
-  if (!selectCarouselItemByVideoId(videoId)) {
+  if (!videoCarouselPage.selectByVideoId(videoId)) {
     return {
       success: false,
       error: `Could not find video ${videoId} in carousel`,
@@ -371,8 +304,8 @@ export async function recoverExtendModeForVideo(
   // Step 2: Wait for the video to load (poll for up to 3 seconds)
   let outcome: GenerationOutcome = { type: "unknown" };
   for (let i = 0; i < 6; i++) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    outcome = detectGenerationOutcome();
+    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.videoLoadPoll));
+    outcome = generationStatusPage.detectOutcome();
     logger.log(
       `recoverExtendModeForVideo: attempt ${i + 1}, state=${outcome.type}`,
     );
@@ -391,7 +324,9 @@ export async function recoverExtendModeForVideo(
 
   // Extra delay for UI to fully settle after carousel selection
   logger.log("recoverExtendModeForVideo: waiting for UI to settle");
-  await new Promise((resolve) => setTimeout(resolve, 1500));
+  await new Promise((resolve) =>
+    setTimeout(resolve, TIMEOUTS.extendModeRecovery),
+  );
 
   // Step 3: Enter extend mode
   const extendResult = await clickExtendVideoFromMenu();
@@ -402,7 +337,7 @@ export async function recoverExtendModeForVideo(
   // Wait for extend mode to activate (check for "Extend video" placeholder)
   const extendPlaceholder = await waitForElement(
     '[data-placeholder="Extend video"]',
-    5000,
+    TIMEOUTS.extendModeActivation,
   );
   if (!extendPlaceholder) {
     return { success: false, error: "Extend mode did not activate" };
@@ -412,7 +347,7 @@ export async function recoverExtendModeForVideo(
   return { success: true };
 }
 
-// Open the "More options" menu and click "Extend video"
+/** Opens the "More options" menu and clicks "Extend video". */
 export async function clickExtendVideoFromMenu(): Promise<{
   success: boolean;
   error?: string;
@@ -420,7 +355,7 @@ export async function clickExtendVideoFromMenu(): Promise<{
   logger.log("clickExtendVideoFromMenu: starting");
 
   // 1. Check for successful video first
-  const outcome = detectGenerationOutcome();
+  const outcome = generationStatusPage.detectOutcome();
   if (outcome.type !== "success") {
     return {
       success: false,
@@ -428,54 +363,28 @@ export async function clickExtendVideoFromMenu(): Promise<{
     };
   }
 
-  // 2. Find and click "More options" button
-  const moreOptionsBtn = document.querySelector<HTMLButtonElement>(
-    'button[aria-label="More options"]',
-  );
-  if (!moreOptionsBtn) {
+  // 2. Open more options menu
+  if (!settingsMenuPage.openMoreOptionsMenu()) {
     return { success: false, error: "More options button not found" };
   }
 
-  // 3. Check if menu is already open
-  const isOpen = moreOptionsBtn.getAttribute("aria-expanded") === "true";
-  logger.log(`clickExtendVideoFromMenu: menu isOpen=${isOpen}`);
-
-  if (!isOpen) {
-    // Open menu with pointer events (like clickMoodOptionFromMenu)
-    moreOptionsBtn.dispatchEvent(
-      new PointerEvent("pointerdown", {
-        bubbles: true,
-        cancelable: true,
-        pointerType: "mouse",
-      }),
+  // 3. Wait for menu to appear if it wasn't already open
+  if (!settingsMenuPage.isMoreOptionsMenuOpen()) {
+    const menuContent = await waitForElement(
+      "[data-radix-menu-content]",
+      TIMEOUTS.menuWait,
     );
-    moreOptionsBtn.dispatchEvent(
-      new PointerEvent("pointerup", {
-        bubbles: true,
-        cancelable: true,
-        pointerType: "mouse",
-      }),
-    );
-    moreOptionsBtn.dispatchEvent(
-      new MouseEvent("click", {
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-
-    // 4. Wait for menu to appear
-    const menuContent = await waitForElement("[data-radix-menu-content]", 1000);
     if (!menuContent) {
       return { success: false, error: "More options menu did not open" };
     }
-
     // Small delay for menu animation
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) =>
+      setTimeout(resolve, TIMEOUTS.menuAnimation),
+    );
   }
 
-  // 5. Find and click "Extend video" menuitem
-  const menuItem = findMenuItemByText("Extend video");
-  if (!menuItem) {
+  // 4. Click "Extend video" menuitem
+  if (!settingsMenuPage.clickExtendVideo()) {
     // Log available menu items for debugging
     const allItems = document.querySelectorAll(
       "[data-radix-menu-content] [role='menuitem']",
@@ -487,34 +396,10 @@ export async function clickExtendVideoFromMenu(): Promise<{
     return { success: false, error: "Extend video menu item not found" };
   }
 
-  logger.log(
-    `Clicking Extend video menu item: "${(menuItem as HTMLElement).textContent?.trim()}"`,
+  // 5. Wait for UI animation to complete
+  await new Promise((resolve) =>
+    setTimeout(resolve, TIMEOUTS.extendMenuAnimation),
   );
-  // Use pointer events for more realistic click (like menu open)
-  const menuItemEl = menuItem as HTMLElement;
-  menuItemEl.dispatchEvent(
-    new PointerEvent("pointerdown", {
-      bubbles: true,
-      cancelable: true,
-      pointerType: "mouse",
-    }),
-  );
-  menuItemEl.dispatchEvent(
-    new PointerEvent("pointerup", {
-      bubbles: true,
-      cancelable: true,
-      pointerType: "mouse",
-    }),
-  );
-  menuItemEl.dispatchEvent(
-    new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
-    }),
-  );
-
-  // 6. Wait for UI animation to complete
-  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   logger.log("clickExtendVideoFromMenu completed");
   return { success: true };
@@ -524,74 +409,9 @@ export async function clickExtendVideoFromMenu(): Promise<{
 // Autosubmit Detection Helpers
 // =============================================================================
 
-export type GenerationOutcome =
-  | { type: "generating"; progress?: string }
-  | { type: "success" }
-  | { type: "moderated" }
-  | { type: "rate_limited" }
-  | { type: "unknown" };
-
-// Detect current generation state from DOM
+/** Detects current generation state from DOM. */
 export function detectGenerationOutcome(): GenerationOutcome {
-  // Check for rate limit toast first (highest priority - stop immediately)
-  // Note: aria-label may include keyboard shortcut hint (e.g., "Notifications alt+T")
-  const notifications = document.querySelector(
-    'section[aria-label^="Notifications"]',
-  );
-  if (notifications?.textContent?.includes("Rate limit reached")) {
-    logger.log("Detected: rate_limited");
-    return { type: "rate_limited" };
-  }
-
-  // Check for generation in progress BEFORE checking for video
-  // (page may have existing video from previous generation)
-  const pulsingElement = document.querySelector(".animate-pulse");
-  if (pulsingElement?.textContent?.includes("Generating")) {
-    const match = pulsingElement.textContent.match(/Generating\s*(\d+%)?/);
-    const progress = match?.[1];
-    return { type: "generating", progress };
-  }
-
-  // Alternative: Cancel Video button indicates generation in progress
-  const cancelBtn = Array.from(document.querySelectorAll("button")).find(
-    (btn) => btn.textContent?.includes("Cancel Video"),
-  );
-  if (cancelBtn) {
-    return { type: "generating" };
-  }
-
-  // Check for moderated result - multiple patterns
-  // Pattern 1: Original img[alt="Moderated"]
-  const moderatedImg = document.querySelector<HTMLImageElement>(
-    'img[alt="Moderated"]',
-  );
-  if (moderatedImg) {
-    logger.log("Detected: moderated (img alt)");
-    return { type: "moderated" };
-  }
-
-  // Pattern 2: Large eye-off icon in preview area (moderated carousel item selected)
-  if (isPreviewAreaModerated()) {
-    logger.log("Detected: moderated (preview eye-off)");
-    return { type: "moderated" };
-  }
-
-  // Pattern 3: Selected carousel item has eye-off icon
-  if (isSelectedCarouselItemModerated()) {
-    logger.log("Detected: moderated (carousel eye-off)");
-    return { type: "moderated" };
-  }
-
-  // Check for successful video (video element with .mp4 src)
-  // Only reaches here if no active generation is in progress
-  const sdVideo = document.querySelector<HTMLVideoElement>("video#sd-video");
-  const hdVideo = document.querySelector<HTMLVideoElement>("video#hd-video");
-  if (sdVideo?.src?.includes(".mp4") || hdVideo?.src?.includes(".mp4")) {
-    logger.log("Detected: success (video found)");
-    return { type: "success" };
-  }
-
-  return { type: "unknown" };
+  return generationStatusPage.detectOutcome();
 }
 
 // =============================================================================
@@ -781,86 +601,42 @@ export function getCurrentPostId(): string | null {
   return match ? match[1] : null;
 }
 
-/** Count carousel items in the video carousel. */
+/** Counts carousel items in the video carousel. */
 export function getCarouselItemCount(): number {
-  const container = document.querySelector("div.snap-y.snap-mandatory");
-  if (!container) return 0;
-  return container.querySelectorAll("button.snap-center").length;
+  return videoCarouselPage.getItems().length;
 }
 
-/** Check if the currently selected carousel item has the moderated (eye-off) icon. */
+/** Checks if the currently selected carousel item has the moderated (eye-off) icon. */
 export function isSelectedCarouselItemModerated(): boolean {
-  const container = document.querySelector("div.snap-y.snap-mandatory");
-  if (!container) return false;
-
-  const buttons = container.querySelectorAll("button.snap-center");
-  for (const btn of buttons) {
-    if (btn.classList.contains("ring-fg-primary")) {
-      // Check for eye-off icon (lucide-eye-off class)
-      return btn.querySelector(".lucide-eye-off") !== null;
-    }
-  }
-  return false;
+  const index = videoCarouselPage.getSelectedIndex();
+  if (index === -1) return false;
+  const items = videoCarouselPage.getItems();
+  return videoCarouselPage.isItemModerated(items[index]);
 }
 
-/** Check if the main preview area shows a moderated state (large eye-off icon). */
+/** Checks if the main preview area shows a moderated state (large eye-off icon). */
 export function isPreviewAreaModerated(): boolean {
-  // Check for the large eye-off icon in the preview area
-  const eyeOffIcon = document.querySelector(".lucide-eye-off.size-24");
-  return eyeOffIcon !== null;
+  return generationStatusPage.isModerated();
 }
 
-/**
- * Finds and clicks a carousel item by matching video ID in its thumbnail URL.
- * Video IDs appear in patterns like:
- * - .../generated/{uuid}/preview_image.jpg
- * - .../share-videos/{uuid}_thumbnail.jpg
- */
+/** Finds and clicks a carousel item by matching video ID in its thumbnail URL. */
 export function selectCarouselItemByVideoId(videoId: string): boolean {
-  const container = document.querySelector("div.snap-y.snap-mandatory");
-  if (!container) return false;
-
-  const buttons = Array.from(
-    container.querySelectorAll("button.snap-center"),
-  ) as HTMLButtonElement[];
-
-  for (const btn of buttons) {
-    const img = btn.querySelector("img");
-    if (!img?.src) continue;
-
-    // Check if this thumbnail's URL contains the video ID
-    if (img.src.includes(videoId)) {
-      btn.click();
-      logger.log(`Selected carousel item for video: ${videoId}`);
-      return true;
-    }
+  const result = videoCarouselPage.selectByVideoId(videoId);
+  if (result) {
+    logger.log(`Selected carousel item for video: ${videoId}`);
+  } else {
+    logger.log(`Could not find carousel item for video: ${videoId}`);
   }
-
-  logger.log(`Could not find carousel item for video: ${videoId}`);
-  return false;
+  return result;
 }
 
 /** Selects the first non-moderated carousel item. Returns true if successful. */
 export function selectFirstValidCarouselItem(): boolean {
-  const container = document.querySelector("div.snap-y.snap-mandatory");
-  if (!container) return false;
-
-  const buttons = Array.from(
-    container.querySelectorAll("button.snap-center"),
-  ) as HTMLButtonElement[];
-
-  for (const btn of buttons) {
-    // Skip moderated items (have eye-off icon)
-    if (btn.querySelector(".lucide-eye-off")) {
-      continue;
-    }
-    // Found a valid item, click it
-    btn.click();
+  const result = videoCarouselPage.selectFirstValid();
+  if (result) {
     logger.log("Selected first valid carousel item");
-    return true;
   }
-
-  return false;
+  return result;
 }
 
 /** Navigates up/down through the video carousel on post pages. */
@@ -868,42 +644,20 @@ export function navigateVideoCarousel(direction: "prev" | "next"): {
   success: boolean;
   error?: string;
 } {
-  // Find the scrollable carousel container
-  const container = document.querySelector("div.snap-y.snap-mandatory");
-  if (!container) {
+  if (!videoCarouselPage.isPresent()) {
     return { success: false, error: "Carousel not found" };
   }
 
-  // Find all thumbnail buttons
-  const buttons = Array.from(
-    container.querySelectorAll("button.snap-center"),
-  ) as HTMLButtonElement[];
-  if (buttons.length === 0) {
+  const items = videoCarouselPage.getItems();
+  if (items.length === 0) {
     return { success: false, error: "No thumbnails found" };
   }
 
-  // Find currently selected button (has ring-fg-primary class)
-  const currentIndex = buttons.findIndex((btn) =>
-    btn.classList.contains("ring-fg-primary"),
-  );
-
-  // Calculate target index (no wrapping - stop at boundaries)
-  let targetIndex: number;
-  if (currentIndex === -1) {
-    targetIndex = 0; // Default to first if none selected
-  } else if (direction === "next") {
-    if (currentIndex >= buttons.length - 1) {
-      return { success: true }; // Already at last, do nothing
-    }
-    targetIndex = currentIndex + 1;
+  if (direction === "next") {
+    videoCarouselPage.navigateNext();
   } else {
-    if (currentIndex <= 0) {
-      return { success: true }; // Already at first, do nothing
-    }
-    targetIndex = currentIndex - 1;
+    videoCarouselPage.navigatePrev();
   }
 
-  // Click the target button
-  buttons[targetIndex].click();
   return { success: true };
 }
