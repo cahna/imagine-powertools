@@ -109,7 +109,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("6s");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -129,7 +129,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("10s");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
   });
@@ -151,7 +151,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("480p");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -171,7 +171,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("720p");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
   });
@@ -196,7 +196,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("6s");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -219,7 +219,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("10s");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -239,7 +239,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("6s");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
   });
@@ -265,7 +265,7 @@ describe("clickVideoOption", () => {
       const result = await clickVideoOption("6s");
 
       expect(focusHandler).toHaveBeenCalled();
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
     });
 
     it("returns error when no editor and no radiogroup found", async () => {
@@ -273,8 +273,9 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("6s");
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("Could not find text input");
+      expect(result.isErr()).toBe(true);
+      const error = result._unsafeUnwrapErr();
+      expect(error.type).toBe("element_not_found");
     });
   });
 
@@ -297,7 +298,7 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("spicy");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(menuItemClicked).toHaveBeenCalled();
     });
 
@@ -312,7 +313,7 @@ describe("clickVideoOption", () => {
       `;
 
       const result = await clickVideoOption("fun");
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
     });
 
     it("clicks normal option via Settings menu", async () => {
@@ -326,7 +327,7 @@ describe("clickVideoOption", () => {
       `;
 
       const result = await clickVideoOption("normal");
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
     });
 
     it("returns error when Settings button not found for mood option", async () => {
@@ -334,16 +335,19 @@ describe("clickVideoOption", () => {
 
       const result = await clickVideoOption("spicy");
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("Settings button not found");
+      expect(result.isErr()).toBe(true);
+      const error = result._unsafeUnwrapErr();
+      expect(error.type).toBe("element_not_found");
+      expect(error).toHaveProperty("element", "settings button");
     });
   });
 
   it("returns error for unknown options", async () => {
     const result = await clickVideoOption("unknown");
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Unknown option: unknown");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("invalid_state");
   });
 });
 
@@ -367,7 +371,7 @@ describe("fillAndSubmitVideo", () => {
 
     const result = fillAndSubmitVideo("test prompt");
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(document.execCommand).toHaveBeenCalledWith(
       "insertText",
       false,
@@ -382,8 +386,10 @@ describe("fillAndSubmitVideo", () => {
 
     const result = fillAndSubmitVideo("test prompt");
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Could not find video prompt input");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("element_not_found");
+    expect(error).toHaveProperty("element", "video prompt input");
   });
 
   it("returns error when Make video button not found", () => {
@@ -393,8 +399,10 @@ describe("fillAndSubmitVideo", () => {
 
     const result = fillAndSubmitVideo("test prompt");
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Could not find Make video button");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("element_not_found");
+    expect(error).toHaveProperty("element", "Make video button");
   });
 });
 
@@ -846,7 +854,7 @@ describe("selectFirstValidCarouselItem", () => {
 
     const result = selectFirstValidCarouselItem();
 
-    expect(result).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 
@@ -866,11 +874,11 @@ describe("selectFirstValidCarouselItem", () => {
 
     const result = selectFirstValidCarouselItem();
 
-    expect(result).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 
-  it("returns false when all items are moderated", () => {
+  it("returns error when all items are moderated", () => {
     document.body.innerHTML = `
       <div class="snap-y snap-mandatory">
         <button class="snap-center">
@@ -884,15 +892,15 @@ describe("selectFirstValidCarouselItem", () => {
 
     const result = selectFirstValidCarouselItem();
 
-    expect(result).toBe(false);
+    expect(result.isErr()).toBe(true);
   });
 
-  it("returns false when carousel not found", () => {
+  it("returns error when carousel not found", () => {
     document.body.innerHTML = `<div>No carousel</div>`;
 
     const result = selectFirstValidCarouselItem();
 
-    expect(result).toBe(false);
+    expect(result.isErr()).toBe(true);
   });
 });
 
@@ -917,7 +925,7 @@ describe("selectCarouselItemByVideoId", () => {
 
     const result = selectCarouselItemByVideoId("xyz-789-uvw");
 
-    expect(result).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 
@@ -934,11 +942,11 @@ describe("selectCarouselItemByVideoId", () => {
 
     const result = selectCarouselItemByVideoId("abc-123");
 
-    expect(result).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 
-  it("returns false when video ID not found", () => {
+  it("returns error when video ID not found", () => {
     document.body.innerHTML = `
       <div class="snap-y snap-mandatory">
         <button class="snap-center">
@@ -949,15 +957,15 @@ describe("selectCarouselItemByVideoId", () => {
 
     const result = selectCarouselItemByVideoId("nonexistent-id");
 
-    expect(result).toBe(false);
+    expect(result.isErr()).toBe(true);
   });
 
-  it("returns false when carousel not found", () => {
+  it("returns error when carousel not found", () => {
     document.body.innerHTML = `<div>No carousel</div>`;
 
     const result = selectCarouselItemByVideoId("any-id");
 
-    expect(result).toBe(false);
+    expect(result.isErr()).toBe(true);
   });
 });
 
@@ -1116,7 +1124,7 @@ describe("clickMakeVideoButton", () => {
 
     const result = clickMakeVideoButton();
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 
@@ -1127,8 +1135,10 @@ describe("clickMakeVideoButton", () => {
 
     const result = clickMakeVideoButton();
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Make video button not found");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("element_not_found");
+    expect(error).toHaveProperty("element", "Make video button");
   });
 });
 
@@ -1144,8 +1154,9 @@ describe("clickExtendVideoFromMenu", () => {
 
     const result = await clickExtendVideoFromMenu();
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("No successful video");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("invalid_state");
   });
 
   it("returns error when More options button not found", async () => {
@@ -1155,8 +1166,10 @@ describe("clickExtendVideoFromMenu", () => {
 
     const result = await clickExtendVideoFromMenu();
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("More options button not found");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("element_not_found");
+    expect(error).toHaveProperty("element", "more options button");
   });
 
   it("opens menu and clicks Extend video when video is present", async () => {
@@ -1190,7 +1203,7 @@ describe("clickExtendVideoFromMenu", () => {
 
     const result = await clickExtendVideoFromMenu();
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(menuItemClicked).toHaveBeenCalled();
   });
 
@@ -1210,7 +1223,7 @@ describe("clickExtendVideoFromMenu", () => {
 
     const result = await clickExtendVideoFromMenu();
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(menuItemClicked).toHaveBeenCalled();
   });
 
@@ -1226,8 +1239,9 @@ describe("clickExtendVideoFromMenu", () => {
 
     const result = await clickExtendVideoFromMenu();
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Extend video menu item not found");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("element_not_found");
   });
 });
 
@@ -1241,8 +1255,10 @@ describe("navigateVideoCarousel", () => {
 
     const result = navigateVideoCarousel("next");
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("Carousel not found");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("element_not_found");
+    expect(error).toHaveProperty("element", "video carousel");
   });
 
   it("returns error when no thumbnail buttons found", () => {
@@ -1254,8 +1270,10 @@ describe("navigateVideoCarousel", () => {
 
     const result = navigateVideoCarousel("next");
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe("No thumbnails found");
+    expect(result.isErr()).toBe(true);
+    const error = result._unsafeUnwrapErr();
+    expect(error.type).toBe("element_not_found");
+    expect(error).toHaveProperty("element", "carousel items");
   });
 
   it("clicks next button when navigating next", () => {
@@ -1273,7 +1291,7 @@ describe("navigateVideoCarousel", () => {
 
     const result = navigateVideoCarousel("next");
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 
@@ -1292,7 +1310,7 @@ describe("navigateVideoCarousel", () => {
 
     const result = navigateVideoCarousel("prev");
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 
@@ -1311,7 +1329,7 @@ describe("navigateVideoCarousel", () => {
 
     const result = navigateVideoCarousel("next");
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).not.toHaveBeenCalled();
   });
 
@@ -1330,7 +1348,7 @@ describe("navigateVideoCarousel", () => {
 
     const result = navigateVideoCarousel("prev");
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).not.toHaveBeenCalled();
   });
 
@@ -1349,7 +1367,7 @@ describe("navigateVideoCarousel", () => {
 
     const result = navigateVideoCarousel("next");
 
-    expect(result.success).toBe(true);
+    expect(result.isOk()).toBe(true);
     expect(clickHandler).toHaveBeenCalled();
   });
 });

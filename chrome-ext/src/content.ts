@@ -35,6 +35,8 @@ import {
   AutosubmitMessageType,
   JobsMessageType,
 } from "./shared/messageTypes";
+import { serialize, ok, err } from "./shared/result";
+import type { DomError } from "./shared/errors";
 
 export type { Mode };
 
@@ -111,7 +113,12 @@ function getAutosubmitState(): AutosubmitState {
       return { status: "success", attempt: context.attempt };
 
     case "stopped": {
-      type LegacyReason = "cancelled" | "rate_limited" | "max_retries" | "timeout" | "navigated";
+      type LegacyReason =
+        | "cancelled"
+        | "rate_limited"
+        | "max_retries"
+        | "timeout"
+        | "navigated";
       const reasonMap: Record<StopReason, LegacyReason> = {
         cancelled: "cancelled",
         navigated: "navigated",
@@ -123,7 +130,9 @@ function getAutosubmitState(): AutosubmitState {
       };
       return {
         status: "stopped" as const,
-        reason: context.stopReason ? reasonMap[context.stopReason] : ("cancelled" as LegacyReason),
+        reason: context.stopReason
+          ? reasonMap[context.stopReason]
+          : ("cancelled" as LegacyReason),
         attempt: context.attempt,
       };
     }
@@ -189,7 +198,8 @@ async function runAutosubmit(
     logger.log(
       "Moderated content detected, navigating to first valid carousel item",
     );
-    if (!selectFirstValidCarouselItem()) {
+    const selectResult = selectFirstValidCarouselItem();
+    if (selectResult.isErr()) {
       logger.error(`${logPrefix}No valid carousel items found`);
       // Don't start machine - just bail early
       broadcastAutosubmitStatus();
@@ -214,7 +224,9 @@ async function runAutosubmit(
   // Create and start the XState machine actor
   autosubmitActor = createActor(autosubmitMachine);
   autosubmitActor.subscribe((state) => {
-    logger.log(`[machine] State: ${state.value}, attempt: ${state.context.attempt}`);
+    logger.log(
+      `[machine] State: ${state.value}, attempt: ${state.context.attempt}`,
+    );
     broadcastAutosubmitStatus();
   });
   autosubmitActor.start();
@@ -341,7 +353,7 @@ async function runAutosubmit(
 
     // Fill and submit
     const submitResult = fillAndSubmitVideo(mostRecent.text);
-    if (!submitResult.success) {
+    if (submitResult.isErr()) {
       logger.error(`${logPrefix}Fill and submit failed:`, submitResult.error);
       sendAutosubmitEvent({ type: "SUBMIT_FAILED" });
       break;
@@ -407,7 +419,9 @@ async function runAutosubmit(
       if (attempt < maxRetries) {
         logger.log(`${logPrefix}Timeout on attempt ${attempt}, retrying...`);
         sendAutosubmitEvent({ type: "MODERATED" }); // Triggers retry logic in machine
-        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.retryDelay));
+        await new Promise((resolve) =>
+          setTimeout(resolve, TIMEOUTS.retryDelay),
+        );
 
         // For extend mode, recover before retrying
         if (isExtend && extendSourceVideoId) {
@@ -416,15 +430,18 @@ async function runAutosubmit(
           );
           const recoveryResult =
             await recoverExtendModeForVideo(extendSourceVideoId);
-          if (!recoveryResult.success) {
+          if (recoveryResult.isErr()) {
             logger.error(
-              `${logPrefix}Failed to recover extend mode: ${recoveryResult.error}`,
+              `${logPrefix}Failed to recover extend mode:`,
+              recoveryResult.error,
             );
             sendAutosubmitEvent({ type: "RECOVERY_FAILED" });
             break;
           }
           sendAutosubmitEvent({ type: "RECOVERED" });
-          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.uiSettle));
+          await new Promise((resolve) =>
+            setTimeout(resolve, TIMEOUTS.uiSettle),
+          );
         }
 
         sendAutosubmitEvent({ type: "RETRY" });
@@ -455,8 +472,12 @@ async function runAutosubmit(
       sendAutosubmitEvent({ type: "MODERATED" });
 
       if (attempt < maxRetries) {
-        logger.log(`${logPrefix}Moderated, retrying in ${TIMEOUTS.retryDelay}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.retryDelay));
+        logger.log(
+          `${logPrefix}Moderated, retrying in ${TIMEOUTS.retryDelay}ms...`,
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, TIMEOUTS.retryDelay),
+        );
 
         // For extend mode, we need to recover: navigate back to source video and re-enter extend mode
         if (isExtend && extendSourceVideoId) {
@@ -465,16 +486,19 @@ async function runAutosubmit(
           );
           const recoveryResult =
             await recoverExtendModeForVideo(extendSourceVideoId);
-          if (!recoveryResult.success) {
+          if (recoveryResult.isErr()) {
             logger.error(
-              `${logPrefix}Failed to recover extend mode: ${recoveryResult.error}`,
+              `${logPrefix}Failed to recover extend mode:`,
+              recoveryResult.error,
             );
             sendAutosubmitEvent({ type: "RECOVERY_FAILED" });
             break;
           }
           sendAutosubmitEvent({ type: "RECOVERED" });
           // Brief delay after recovery before retrying
-          await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.uiSettle));
+          await new Promise((resolve) =>
+            setTimeout(resolve, TIMEOUTS.uiSettle),
+          );
         }
 
         sendAutosubmitEvent({ type: "RETRY" });
@@ -771,7 +795,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message.type === PromptMessageType.FILL_AND_SUBMIT) {
     const result = fillAndSubmitVideo(message.text);
-    sendResponse(result);
+    sendResponse(serialize(result));
     return true;
   }
 
@@ -783,7 +807,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const trimmed = text.trim();
 
         if (!trimmed) {
-          sendResponse({ success: false, error: "Clipboard is empty" });
+          sendResponse(
+            serialize(
+              err({
+                type: "invalid_state",
+                expected: "non-empty clipboard",
+                actual: "empty",
+              } as DomError),
+            ),
+          );
           return;
         }
 
@@ -794,10 +826,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         // Fill and submit
         const result = fillAndSubmitVideo(trimmed);
-        sendResponse(result);
+        sendResponse(serialize(result));
       } catch (error) {
         logger.error("Clipboard read failed:", error);
-        sendResponse({ success: false, error: "Failed to read clipboard" });
+        sendResponse(
+          serialize(
+            err({
+              type: "invalid_state",
+              expected: "clipboard access",
+              actual: "read failed",
+            } as DomError),
+          ),
+        );
       }
     })();
     return true; // Keep channel open for async response
@@ -806,14 +846,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === PromptMessageType.CLICK_VIDEO_OPTION) {
     (async () => {
       const result = await clickVideoOption(message.option);
-      sendResponse(result);
+      sendResponse(serialize(result));
     })();
     return true; // Keep channel open for async response
   }
 
   if (message.type === PromptMessageType.CLICK_DOWNLOAD) {
     const result = clickDownloadButton();
-    sendResponse(result);
+    sendResponse(serialize(result));
     return true;
   }
 
@@ -823,15 +863,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (isInExtendMode()) {
         logger.log("Already in extend mode, clicking Make video");
         const result = clickMakeVideoButton();
-        sendResponse(result);
+        sendResponse(serialize(result));
         return;
       }
 
       // Otherwise, open menu and click Extend video
       logger.log("Opening More options menu to click Extend video");
       const menuResult = await clickExtendVideoFromMenu();
-      if (!menuResult.success) {
-        sendResponse(menuResult);
+      if (menuResult.isErr()) {
+        sendResponse(serialize(menuResult));
         return;
       }
 
@@ -841,7 +881,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         1000,
       );
       if (!exitBtn) {
-        sendResponse({ success: false, error: "Extend mode did not activate" });
+        sendResponse(
+          serialize(
+            err({
+              type: "timeout",
+              operation: "extend mode activation",
+              ms: 1000,
+            } as DomError),
+          ),
+        );
         return;
       }
 
@@ -850,20 +898,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       // Click Make video
       const submitResult = clickMakeVideoButton();
-      sendResponse(submitResult);
+      sendResponse(serialize(submitResult));
     })();
     return true; // Keep channel open for async response
   }
 
   if (message.type === PromptMessageType.CAROUSEL_PREV) {
     const result = navigateVideoCarousel("prev");
-    sendResponse(result);
+    sendResponse(serialize(result));
     return true;
   }
 
   if (message.type === PromptMessageType.CAROUSEL_NEXT) {
     const result = navigateVideoCarousel("next");
-    sendResponse(result);
+    sendResponse(serialize(result));
     return true;
   }
 
@@ -875,8 +923,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // If not in extend mode, enter it first
       if (!isInExtendMode()) {
         const result = await clickExtendVideoFromMenu();
-        if (!result.success) {
-          sendResponse(result);
+        if (result.isErr()) {
+          sendResponse(serialize(result));
           return;
         }
         // Wait for extend mode UI
@@ -885,10 +933,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           1000,
         );
         if (!exitBtn) {
-          sendResponse({
-            success: false,
-            error: "Extend mode did not activate",
-          });
+          sendResponse(
+            serialize(
+              err({
+                type: "timeout",
+                operation: "extend mode activation",
+                ms: 1000,
+              } as DomError),
+            ),
+          );
           return;
         }
         await new Promise((r) => setTimeout(r, 100));
@@ -901,9 +954,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (tiptapEditor) {
         tiptapEditor.focus();
         logger.log("[extend] Focused prompt input");
-        sendResponse({ success: true });
+        sendResponse(serialize(ok(undefined)));
       } else {
-        sendResponse({ success: false, error: "Could not find prompt input" });
+        sendResponse(
+          serialize(
+            err({
+              type: "element_not_found",
+              element: "prompt input",
+            } as DomError),
+          ),
+        );
       }
     })();
     return true;
@@ -915,7 +975,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // not the source image's UUID. This must match what autosubmit uses.
       const videoId = getPostId();
       if (!videoId) {
-        sendResponse({ success: false, error: "No video ID" });
+        sendResponse(
+          serialize(
+            err({
+              type: "element_not_found",
+              element: "video ID in URL",
+            } as DomError),
+          ),
+        );
         return;
       }
 
@@ -933,7 +1000,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       // Fill and submit
       const result = fillAndSubmitVideo(message.text);
-      sendResponse(result);
+      sendResponse(serialize(result));
     })();
     return true;
   }
@@ -944,7 +1011,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // not the source image's UUID. This must match what autosubmit uses.
       const videoId = getPostId();
       if (!videoId) {
-        sendResponse({ success: false, error: "No video ID" });
+        sendResponse(
+          serialize(
+            err({
+              type: "element_not_found",
+              element: "video ID in URL",
+            } as DomError),
+          ),
+        );
         return;
       }
 
@@ -953,7 +1027,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const trimmed = text.trim();
 
         if (!trimmed) {
-          sendResponse({ success: false, error: "Clipboard is empty" });
+          sendResponse(
+            serialize(
+              err({
+                type: "invalid_state",
+                expected: "non-empty clipboard",
+                actual: "empty",
+              } as DomError),
+            ),
+          );
           return;
         }
 
@@ -971,10 +1053,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
         // Fill and submit
         const result = fillAndSubmitVideo(trimmed);
-        sendResponse(result);
+        sendResponse(serialize(result));
       } catch (error) {
         logger.error("[extend] Clipboard read failed:", error);
-        sendResponse({ success: false, error: "Failed to read clipboard" });
+        sendResponse(
+          serialize(
+            err({
+              type: "invalid_state",
+              expected: "clipboard access",
+              actual: "read failed",
+            } as DomError),
+          ),
+        );
       }
     })();
     return true;
@@ -1014,17 +1104,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 /** Clicks the download button on the page to download the current video. */
-function clickDownloadButton(): { success: boolean; error?: string } {
+function clickDownloadButton(): import("./shared/result").Result<
+  void,
+  DomError
+> {
   const downloadBtn = document.querySelector<HTMLButtonElement>(
     'button[aria-label="Download"]',
   );
 
   if (!downloadBtn) {
-    return { success: false, error: "Download button not found" };
+    return err({ type: "element_not_found", element: "Download button" });
   }
 
   downloadBtn.click();
-  return { success: true };
+  return ok(undefined);
 }
 
 /** Extracts the image/video UUID from a masonry card element's img/video src or alt. */

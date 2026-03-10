@@ -11,6 +11,8 @@ import {
   SettingsMenuPage,
   type GenerationOutcome,
 } from "./pages";
+import { Result, ok, err } from "./shared/result";
+import type { DomError } from "./shared/errors";
 
 // Re-export GenerationOutcome type from PageObjects
 export type { GenerationOutcome };
@@ -136,20 +138,18 @@ export function setTiptapContent(element: HTMLElement, text: string): void {
 }
 
 /** Fills the video prompt and clicks the Make video button. */
-export function fillAndSubmitVideo(text: string): {
-  success: boolean;
-  error?: string;
-} {
+export function fillAndSubmitVideo(text: string): Result<void, DomError> {
   return videoPromptPage.fillAndSubmit(text);
 }
 
 /** Clicks a mood option from the Settings dropdown menu. */
 export async function clickMoodOptionFromMenu(
   option: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<Result<void, DomError>> {
   // Open menu if needed
-  if (!settingsMenuPage.openSettingsMenu()) {
-    return { success: false, error: "Settings button not found" };
+  const openResult = settingsMenuPage.openSettingsMenu();
+  if (openResult.isErr()) {
+    return openResult;
   }
 
   // Wait for menu to appear if it wasn't already open
@@ -159,23 +159,14 @@ export async function clickMoodOptionFromMenu(
       TIMEOUTS.menuWait,
     );
     if (!menuContent) {
-      return { success: false, error: "Settings menu did not open" };
+      return err({ type: "menu_not_open", menu: "settings" });
     }
     // Small delay for menu animation
-    await new Promise((resolve) =>
-      setTimeout(resolve, TIMEOUTS.menuAnimation),
-    );
+    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.menuAnimation));
   }
 
   // Click the mood option
-  if (!settingsMenuPage.clickMoodOption(option)) {
-    return {
-      success: false,
-      error: `Mood option "${option}" not found in menu`,
-    };
-  }
-
-  return { success: true };
+  return settingsMenuPage.clickMoodOption(option);
 }
 
 // Click a video option (duration, resolution, or mood)
@@ -183,7 +174,7 @@ export async function clickMoodOptionFromMenu(
 // In extend mode, duration options are "+6s" and "+10s" instead of "6s" and "10s"
 export async function clickVideoOption(
   option: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<Result<void, DomError>> {
   // Check if we're in extend mode for duration option transformation
   const inExtendMode = isInExtendMode();
 
@@ -215,10 +206,10 @@ export async function clickVideoOption(
       );
 
       if (!tiptapEditor) {
-        return {
-          success: false,
-          error: "Could not find text input to expand form",
-        };
+        return err({
+          type: "element_not_found",
+          element: "tiptap editor (form collapsed)",
+        });
       }
 
       // Focus the editor to trigger form expansion
@@ -230,10 +221,10 @@ export async function clickVideoOption(
         1000,
       );
       if (!appeared) {
-        return {
-          success: false,
-          error: "Form did not expand - radiogroup not found",
-        };
+        return err({
+          type: "element_not_found",
+          element: `radiogroup "${radioGroupLabel}"`,
+        });
       }
 
       radioGroup = appeared;
@@ -248,15 +239,15 @@ export async function clickVideoOption(
       for (const span of spans) {
         if (span.textContent?.trim() === displayOption) {
           btn.click();
-          return { success: true };
+          return ok(undefined);
         }
       }
     }
 
-    return {
-      success: false,
-      error: `Option "${displayOption}" not found in radiogroup`,
-    };
+    return err({
+      type: "element_not_found",
+      element: `radio option "${displayOption}"`,
+    });
   }
 
   // Mood options require opening the Settings menu
@@ -264,7 +255,11 @@ export async function clickVideoOption(
     return await clickMoodOptionFromMenu(option);
   }
 
-  return { success: false, error: `Unknown option: ${option}` };
+  return err({
+    type: "invalid_state",
+    expected: "6s|10s|480p|720p|spicy|fun|normal",
+    actual: option,
+  });
 }
 
 // =============================================================================
@@ -277,11 +272,8 @@ export function isInExtendMode(): boolean {
 }
 
 /** Clicks the Make video button. */
-export function clickMakeVideoButton(): { success: boolean; error?: string } {
-  if (!videoPromptPage.submit()) {
-    return { success: false, error: "Make video button not found" };
-  }
-  return { success: true };
+export function clickMakeVideoButton(): Result<void, DomError> {
+  return videoPromptPage.submit();
 }
 
 /**
@@ -292,13 +284,11 @@ export function clickMakeVideoButton(): { success: boolean; error?: string } {
  */
 export async function recoverExtendModeForVideo(
   videoId: string,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<Result<void, DomError>> {
   // Step 1: Navigate to the source video in the carousel
-  if (!videoCarouselPage.selectByVideoId(videoId)) {
-    return {
-      success: false,
-      error: `Could not find video ${videoId} in carousel`,
-    };
+  const selectResult = videoCarouselPage.selectByVideoId(videoId);
+  if (selectResult.isErr()) {
+    return selectResult;
   }
 
   // Step 2: Wait for the video to load (poll for up to 3 seconds)
@@ -316,10 +306,11 @@ export async function recoverExtendModeForVideo(
 
   // Verify we're now showing a valid video (not moderated)
   if (outcome.type !== "success") {
-    return {
-      success: false,
-      error: `Video ${videoId} is not valid (state: ${outcome.type})`,
-    };
+    return err({
+      type: "invalid_state",
+      expected: "success",
+      actual: outcome.type,
+    });
   }
 
   // Extra delay for UI to fully settle after carousel selection
@@ -330,7 +321,7 @@ export async function recoverExtendModeForVideo(
 
   // Step 3: Enter extend mode
   const extendResult = await clickExtendVideoFromMenu();
-  if (!extendResult.success) {
+  if (extendResult.isErr()) {
     return extendResult;
   }
 
@@ -340,32 +331,37 @@ export async function recoverExtendModeForVideo(
     TIMEOUTS.extendModeActivation,
   );
   if (!extendPlaceholder) {
-    return { success: false, error: "Extend mode did not activate" };
+    return err({
+      type: "timeout",
+      operation: "extend mode activation",
+      ms: TIMEOUTS.extendModeActivation,
+    });
   }
 
   logger.log(`Recovered extend mode for video: ${videoId}`);
-  return { success: true };
+  return ok(undefined);
 }
 
 /** Opens the "More options" menu and clicks "Extend video". */
-export async function clickExtendVideoFromMenu(): Promise<{
-  success: boolean;
-  error?: string;
-}> {
+export async function clickExtendVideoFromMenu(): Promise<
+  Result<void, DomError>
+> {
   logger.log("clickExtendVideoFromMenu: starting");
 
   // 1. Check for successful video first
   const outcome = generationStatusPage.detectOutcome();
   if (outcome.type !== "success") {
-    return {
-      success: false,
-      error: `No successful video (current: ${outcome.type})`,
-    };
+    return err({
+      type: "invalid_state",
+      expected: "success",
+      actual: outcome.type,
+    });
   }
 
   // 2. Open more options menu
-  if (!settingsMenuPage.openMoreOptionsMenu()) {
-    return { success: false, error: "More options button not found" };
+  const openResult = settingsMenuPage.openMoreOptionsMenu();
+  if (openResult.isErr()) {
+    return openResult;
   }
 
   // 3. Wait for menu to appear if it wasn't already open
@@ -375,16 +371,15 @@ export async function clickExtendVideoFromMenu(): Promise<{
       TIMEOUTS.menuWait,
     );
     if (!menuContent) {
-      return { success: false, error: "More options menu did not open" };
+      return err({ type: "menu_not_open", menu: "more options" });
     }
     // Small delay for menu animation
-    await new Promise((resolve) =>
-      setTimeout(resolve, TIMEOUTS.menuAnimation),
-    );
+    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.menuAnimation));
   }
 
   // 4. Click "Extend video" menuitem
-  if (!settingsMenuPage.clickExtendVideo()) {
+  const clickResult = settingsMenuPage.clickExtendVideo();
+  if (clickResult.isErr()) {
     // Log available menu items for debugging
     const allItems = document.querySelectorAll(
       "[data-radix-menu-content] [role='menuitem']",
@@ -393,7 +388,7 @@ export async function clickExtendVideoFromMenu(): Promise<{
       .map((el) => el.textContent?.trim())
       .filter(Boolean);
     logger.log(`Available menu items: ${JSON.stringify(itemTexts)}`);
-    return { success: false, error: "Extend video menu item not found" };
+    return clickResult;
   }
 
   // 5. Wait for UI animation to complete
@@ -402,7 +397,7 @@ export async function clickExtendVideoFromMenu(): Promise<{
   );
 
   logger.log("clickExtendVideoFromMenu completed");
-  return { success: true };
+  return ok(undefined);
 }
 
 // =============================================================================
@@ -620,9 +615,11 @@ export function isPreviewAreaModerated(): boolean {
 }
 
 /** Finds and clicks a carousel item by matching video ID in its thumbnail URL. */
-export function selectCarouselItemByVideoId(videoId: string): boolean {
+export function selectCarouselItemByVideoId(
+  videoId: string,
+): Result<void, DomError> {
   const result = videoCarouselPage.selectByVideoId(videoId);
-  if (result) {
+  if (result.isOk()) {
     logger.log(`Selected carousel item for video: ${videoId}`);
   } else {
     logger.log(`Could not find carousel item for video: ${videoId}`);
@@ -630,34 +627,26 @@ export function selectCarouselItemByVideoId(videoId: string): boolean {
   return result;
 }
 
-/** Selects the first non-moderated carousel item. Returns true if successful. */
-export function selectFirstValidCarouselItem(): boolean {
+/** Selects the first non-moderated carousel item. */
+export function selectFirstValidCarouselItem(): Result<void, DomError> {
   const result = videoCarouselPage.selectFirstValid();
-  if (result) {
+  if (result.isOk()) {
     logger.log("Selected first valid carousel item");
   }
   return result;
 }
 
 /** Navigates up/down through the video carousel on post pages. */
-export function navigateVideoCarousel(direction: "prev" | "next"): {
-  success: boolean;
-  error?: string;
-} {
+export function navigateVideoCarousel(
+  direction: "prev" | "next",
+): Result<void, DomError> {
   if (!videoCarouselPage.isPresent()) {
-    return { success: false, error: "Carousel not found" };
-  }
-
-  const items = videoCarouselPage.getItems();
-  if (items.length === 0) {
-    return { success: false, error: "No thumbnails found" };
+    return err({ type: "element_not_found", element: "video carousel" });
   }
 
   if (direction === "next") {
-    videoCarouselPage.navigateNext();
+    return videoCarouselPage.navigateNext();
   } else {
-    videoCarouselPage.navigatePrev();
+    return videoCarouselPage.navigatePrev();
   }
-
-  return { success: true };
 }

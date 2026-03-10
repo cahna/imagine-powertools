@@ -1,5 +1,7 @@
 import { PageObject } from "./PageObject";
 import { SELECTORS, selectFirst, selectAllFirst } from "../selectors";
+import { Result, ok, err } from "../shared/result";
+import type { DomError } from "../shared/errors";
 
 /**
  * PageObject for interacting with the video thumbnail carousel.
@@ -42,79 +44,95 @@ export class VideoCarouselPage extends PageObject {
   }
 
   /** Clicks the carousel item at the specified index. */
-  selectItem(index: number): boolean {
+  selectItem(index: number): Result<void, DomError> {
     const items = this.getItems();
-    if (index < 0 || index >= items.length) return false;
+    if (index < 0 || index >= items.length) {
+      return err({
+        type: "invalid_state",
+        expected: `index in range 0-${items.length - 1}`,
+        actual: `index ${index}`,
+      });
+    }
 
     items[index].click();
-    return true;
+    return ok(undefined);
   }
 
-  /** Navigates to the next carousel item. Returns false if carousel not present. */
-  navigateNext(): boolean {
+  /** Navigates to the next carousel item. */
+  navigateNext(): Result<void, DomError> {
     const items = this.getItems();
-    if (items.length === 0) return false;
+    if (items.length === 0) {
+      return err({ type: "element_not_found", element: "carousel items" });
+    }
 
     const currentIndex = this.getSelectedIndex();
 
     // If no selection, click first item
     if (currentIndex === -1) {
       items[0].click();
-      return true;
+      return ok(undefined);
     }
 
     // If already at last, do nothing but return success
     if (currentIndex >= items.length - 1) {
-      return true;
+      return ok(undefined);
     }
 
     items[currentIndex + 1].click();
-    return true;
+    return ok(undefined);
   }
 
-  /** Navigates to the previous carousel item. Returns false if carousel not present. */
-  navigatePrev(): boolean {
+  /** Navigates to the previous carousel item. */
+  navigatePrev(): Result<void, DomError> {
     const items = this.getItems();
-    if (items.length === 0) return false;
+    if (items.length === 0) {
+      return err({ type: "element_not_found", element: "carousel items" });
+    }
 
     const currentIndex = this.getSelectedIndex();
 
     // If no selection or already at first, do nothing but return success
     if (currentIndex <= 0) {
-      return true;
+      return ok(undefined);
     }
 
     items[currentIndex - 1].click();
-    return true;
+    return ok(undefined);
   }
 
   /** Selects the first non-moderated carousel item. */
-  selectFirstValid(): boolean {
+  selectFirstValid(): Result<void, DomError> {
     const items = this.getItems();
 
     for (const item of items) {
       if (!this.isItemModerated(item)) {
         item.click();
-        return true;
+        return ok(undefined);
       }
     }
 
-    return false;
+    return err({
+      type: "element_not_found",
+      element: "non-moderated carousel item",
+    });
   }
 
   /** Selects the carousel item matching the given video ID in its thumbnail URL. */
-  selectByVideoId(videoId: string): boolean {
+  selectByVideoId(videoId: string): Result<void, DomError> {
     const items = this.getItems();
 
     for (const item of items) {
       const img = item.querySelector("img");
       if (img?.src?.includes(videoId)) {
         item.click();
-        return true;
+        return ok(undefined);
       }
     }
 
-    return false;
+    return err({
+      type: "element_not_found",
+      element: `carousel item with video ID ${videoId}`,
+    });
   }
 
   /** Returns the carousel container element. */

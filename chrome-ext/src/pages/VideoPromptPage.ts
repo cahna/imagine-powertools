@@ -1,6 +1,8 @@
 import { PageObject } from "./PageObject";
 import { SELECTORS } from "../selectors";
 import { TIMEOUTS } from "../config";
+import { Result, ok, err } from "../shared/result";
+import type { DomError } from "../shared/errors";
 
 /**
  * PageObject for interacting with the video prompt input and submission.
@@ -23,9 +25,11 @@ export class VideoPromptPage extends PageObject {
   }
 
   /** Fills the prompt input with the given text. */
-  fillPrompt(text: string): boolean {
+  fillPrompt(text: string): Result<void, DomError> {
     const input = this.getInput();
-    if (!input) return false;
+    if (!input) {
+      return err({ type: "element_not_found", element: "video prompt input" });
+    }
 
     if (this.isTiptapEditor(input)) {
       this.setTiptapContent(input, text);
@@ -33,28 +37,30 @@ export class VideoPromptPage extends PageObject {
       this.setReactInputValue(input as HTMLTextAreaElement, text);
     }
 
-    return true;
+    return ok(undefined);
   }
 
   /** Clicks the Make video button. */
-  submit(): boolean {
+  submit(): Result<void, DomError> {
     const button = this.getMakeVideoButton();
-    if (!button) return false;
+    if (!button) {
+      return err({ type: "element_not_found", element: "Make video button" });
+    }
 
     button.click();
-    return true;
+    return ok(undefined);
   }
 
   /** Fills the prompt and submits the form. */
-  fillAndSubmit(text: string): { success: boolean; error?: string } {
+  fillAndSubmit(text: string): Result<void, DomError> {
     const input = this.getInput();
     if (!input) {
-      return { success: false, error: "Could not find video prompt input" };
+      return err({ type: "element_not_found", element: "video prompt input" });
     }
 
     const button = this.getMakeVideoButton();
     if (!button) {
-      return { success: false, error: "Could not find Make video button" };
+      return err({ type: "element_not_found", element: "Make video button" });
     }
 
     // Fill the prompt
@@ -69,7 +75,7 @@ export class VideoPromptPage extends PageObject {
       button.click();
     }, TIMEOUTS.inputToButtonDelay);
 
-    return { success: true };
+    return ok(undefined);
   }
 
   /** Returns true if the page is in extend video mode. */
@@ -78,12 +84,14 @@ export class VideoPromptPage extends PageObject {
   }
 
   /** Focuses the video prompt input. */
-  focus(): boolean {
+  focus(): Result<void, DomError> {
     const input = this.getInput();
-    if (!input) return false;
+    if (!input) {
+      return err({ type: "element_not_found", element: "video prompt input" });
+    }
 
     input.focus();
-    return true;
+    return ok(undefined);
   }
 
   /** Returns true if the element is a tiptap/ProseMirror editor. */

@@ -103,7 +103,7 @@ describe("VideoPromptPage", () => {
       const page = new VideoPromptPage();
       const result = page.fillPrompt("test prompt");
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(document.execCommand).toHaveBeenCalledWith(
         "insertText",
         false,
@@ -119,18 +119,19 @@ describe("VideoPromptPage", () => {
       const page = new VideoPromptPage();
       const result = page.fillPrompt("test prompt");
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
 
       const textarea = document.querySelector("textarea");
       expect(textarea?.value).toBe("test prompt");
     });
 
-    it("returns false when no input present", () => {
+    it("returns error when no input present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new VideoPromptPage();
+      const result = page.fillPrompt("test");
 
-      expect(page.fillPrompt("test")).toBe(false);
+      expect(result.isErr()).toBe(true);
     });
   });
 
@@ -140,23 +141,22 @@ describe("VideoPromptPage", () => {
       document.body.innerHTML = `
         <button aria-label="Make video">Make video</button>
       `;
-      document
-        .querySelector("button")!
-        .addEventListener("click", clickHandler);
+      document.querySelector("button")!.addEventListener("click", clickHandler);
 
       const page = new VideoPromptPage();
       const result = page.submit();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns false when button not present", () => {
+    it("returns error when button not present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new VideoPromptPage();
+      const result = page.submit();
 
-      expect(page.submit()).toBe(false);
+      expect(result.isErr()).toBe(true);
     });
   });
 
@@ -167,14 +167,12 @@ describe("VideoPromptPage", () => {
         <div class="tiptap ProseMirror" contenteditable="true"></div>
         <button aria-label="Make video">Make video</button>
       `;
-      document
-        .querySelector("button")!
-        .addEventListener("click", clickHandler);
+      document.querySelector("button")!.addEventListener("click", clickHandler);
 
       const page = new VideoPromptPage();
       const result = page.fillAndSubmit("test prompt");
 
-      expect(result.success).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(document.execCommand).toHaveBeenCalledWith(
         "insertText",
         false,
@@ -191,8 +189,10 @@ describe("VideoPromptPage", () => {
       const page = new VideoPromptPage();
       const result = page.fillAndSubmit("test");
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("input");
+      expect(result.isErr()).toBe(true);
+      const error = result._unsafeUnwrapErr();
+      expect(error.type).toBe("element_not_found");
+      expect(error).toHaveProperty("element", "video prompt input");
     });
 
     it("returns error when button not found", () => {
@@ -203,8 +203,10 @@ describe("VideoPromptPage", () => {
       const page = new VideoPromptPage();
       const result = page.fillAndSubmit("test");
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("button");
+      expect(result.isErr()).toBe(true);
+      const error = result._unsafeUnwrapErr();
+      expect(error.type).toBe("element_not_found");
+      expect(error).toHaveProperty("element", "Make video button");
     });
   });
 
@@ -255,7 +257,7 @@ describe("VideoPromptPage", () => {
       const page = new VideoPromptPage();
       const result = page.focus();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(focusHandler).toHaveBeenCalled();
     });
 
@@ -271,16 +273,17 @@ describe("VideoPromptPage", () => {
       const page = new VideoPromptPage();
       const result = page.focus();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(focusHandler).toHaveBeenCalled();
     });
 
-    it("returns false when no input present", () => {
+    it("returns error when no input present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new VideoPromptPage();
+      const result = page.focus();
 
-      expect(page.focus()).toBe(false);
+      expect(result.isErr()).toBe(true);
     });
   });
 

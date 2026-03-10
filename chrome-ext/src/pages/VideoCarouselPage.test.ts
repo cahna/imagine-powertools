@@ -169,11 +169,11 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.selectItem(1);
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns false for out of range index", () => {
+    it("returns error for out of range index", () => {
       document.body.innerHTML = `
         <div class="snap-y snap-mandatory">
           <button class="snap-center">1</button>
@@ -182,16 +182,16 @@ describe("VideoCarouselPage", () => {
 
       const page = new VideoCarouselPage();
 
-      expect(page.selectItem(5)).toBe(false);
-      expect(page.selectItem(-1)).toBe(false);
+      expect(page.selectItem(5).isErr()).toBe(true);
+      expect(page.selectItem(-1).isErr()).toBe(true);
     });
 
-    it("returns false when carousel not present", () => {
+    it("returns error when carousel not present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new VideoCarouselPage();
 
-      expect(page.selectItem(0)).toBe(false);
+      expect(page.selectItem(0).isErr()).toBe(true);
     });
   });
 
@@ -210,7 +210,7 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.navigateNext();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -229,7 +229,7 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.navigateNext();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).not.toHaveBeenCalled();
     });
 
@@ -246,16 +246,16 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.navigateNext();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns false when carousel not present", () => {
+    it("returns error when carousel not present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new VideoCarouselPage();
 
-      expect(page.navigateNext()).toBe(false);
+      expect(page.navigateNext().isErr()).toBe(true);
     });
   });
 
@@ -274,7 +274,7 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.navigatePrev();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -293,7 +293,7 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.navigatePrev();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).not.toHaveBeenCalled();
     });
   });
@@ -316,7 +316,7 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.selectFirstValid();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -337,11 +337,11 @@ describe("VideoCarouselPage", () => {
       const page = new VideoCarouselPage();
       const result = page.selectFirstValid();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns false when all items are moderated", () => {
+    it("returns error when all items are moderated", () => {
       document.body.innerHTML = `
         <div class="snap-y snap-mandatory">
           <button class="snap-center">
@@ -355,15 +355,15 @@ describe("VideoCarouselPage", () => {
 
       const page = new VideoCarouselPage();
 
-      expect(page.selectFirstValid()).toBe(false);
+      expect(page.selectFirstValid().isErr()).toBe(true);
     });
 
-    it("returns false when carousel not present", () => {
+    it("returns error when carousel not present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new VideoCarouselPage();
 
-      expect(page.selectFirstValid()).toBe(false);
+      expect(page.selectFirstValid().isErr()).toBe(true);
     });
   });
 
@@ -380,12 +380,14 @@ describe("VideoCarouselPage", () => {
           </button>
         </div>
       `;
-      document.getElementById("target")!.addEventListener("click", clickHandler);
+      document
+        .getElementById("target")!
+        .addEventListener("click", clickHandler);
 
       const page = new VideoCarouselPage();
       const result = page.selectByVideoId("xyz-789");
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -398,16 +400,18 @@ describe("VideoCarouselPage", () => {
           </button>
         </div>
       `;
-      document.getElementById("target")!.addEventListener("click", clickHandler);
+      document
+        .getElementById("target")!
+        .addEventListener("click", clickHandler);
 
       const page = new VideoCarouselPage();
       const result = page.selectByVideoId("abc-123");
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns false when video ID not found", () => {
+    it("returns error when video ID not found", () => {
       document.body.innerHTML = `
         <div class="snap-y snap-mandatory">
           <button class="snap-center">
@@ -418,15 +422,15 @@ describe("VideoCarouselPage", () => {
 
       const page = new VideoCarouselPage();
 
-      expect(page.selectByVideoId("nonexistent")).toBe(false);
+      expect(page.selectByVideoId("nonexistent").isErr()).toBe(true);
     });
 
-    it("returns false when carousel not present", () => {
+    it("returns error when carousel not present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new VideoCarouselPage();
 
-      expect(page.selectByVideoId("any-id")).toBe(false);
+      expect(page.selectByVideoId("any-id").isErr()).toBe(true);
     });
   });
 

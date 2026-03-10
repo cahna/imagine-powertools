@@ -21,7 +21,12 @@ export interface AutosubmitContext {
 
 /** Events for the autosubmit state machine. */
 export type AutosubmitEvent =
-  | { type: "START"; sourceImageId: string; maxRetries: number; isExtend?: boolean }
+  | {
+      type: "START";
+      sourceImageId: string;
+      maxRetries: number;
+      isExtend?: boolean;
+    }
   | { type: "SUBMITTED" }
   | { type: "SUBMIT_FAILED" }
   | { type: "GENERATING" }

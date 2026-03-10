@@ -1,5 +1,7 @@
 import { PageObject } from "./PageObject";
 import { SELECTORS } from "../selectors";
+import { Result, ok, err } from "../shared/result";
+import type { DomError } from "../shared/errors";
 
 /**
  * PageObject for interacting with Settings and More Options menus.
@@ -9,8 +11,7 @@ export class SettingsMenuPage extends PageObject {
   /** Returns true if any menu button is present. */
   isPresent(): boolean {
     return (
-      this.getSettingsButton() !== null ||
-      this.getMoreOptionsButton() !== null
+      this.getSettingsButton() !== null || this.getMoreOptionsButton() !== null
     );
   }
 
@@ -27,25 +28,29 @@ export class SettingsMenuPage extends PageObject {
   }
 
   /** Opens the settings menu if not already open. */
-  openSettingsMenu(): boolean {
+  openSettingsMenu(): Result<void, DomError> {
     const btn = this.getSettingsButton();
-    if (!btn) return false;
+    if (!btn) {
+      return err({ type: "element_not_found", element: "settings button" });
+    }
 
-    if (this.isSettingsMenuOpen()) return true;
+    if (this.isSettingsMenuOpen()) return ok(undefined);
 
     this.dispatchMenuClick(btn);
-    return true;
+    return ok(undefined);
   }
 
   /** Opens the more options menu if not already open. */
-  openMoreOptionsMenu(): boolean {
+  openMoreOptionsMenu(): Result<void, DomError> {
     const btn = this.getMoreOptionsButton();
-    if (!btn) return false;
+    if (!btn) {
+      return err({ type: "element_not_found", element: "more options button" });
+    }
 
-    if (this.isMoreOptionsMenuOpen()) return true;
+    if (this.isMoreOptionsMenuOpen()) return ok(undefined);
 
     this.dispatchMenuClick(btn);
-    return true;
+    return ok(undefined);
   }
 
   /** Finds a menu item by its text content (supports partial match). */
@@ -62,23 +67,25 @@ export class SettingsMenuPage extends PageObject {
   }
 
   /** Clicks a menu item with the specified text. */
-  clickMenuItem(text: string): boolean {
+  clickMenuItem(text: string): Result<void, DomError> {
     const item = this.findMenuItem(text);
-    if (!item) return false;
+    if (!item) {
+      return err({ type: "element_not_found", element: `menu item "${text}"` });
+    }
 
     this.dispatchMenuClick(item as HTMLElement);
-    return true;
+    return ok(undefined);
   }
 
   /** Clicks a mood option (spicy, fun, normal) in the settings menu. */
-  clickMoodOption(option: string): boolean {
+  clickMoodOption(option: string): Result<void, DomError> {
     // Capitalize first letter for matching (e.g., "spicy" -> "Spicy")
     const moodText = option.charAt(0).toUpperCase() + option.slice(1);
     return this.clickMenuItem(moodText);
   }
 
   /** Clicks the Extend video menu item. */
-  clickExtendVideo(): boolean {
+  clickExtendVideo(): Result<void, DomError> {
     return this.clickMenuItem("Extend video");
   }
 

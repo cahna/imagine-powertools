@@ -108,36 +108,35 @@ describe("SettingsMenuPage", () => {
       const page = new SettingsMenuPage();
       const result = page.openSettingsMenu();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(pointerDownHandler).toHaveBeenCalled();
       expect(pointerUpHandler).toHaveBeenCalled();
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns true without clicking when menu already open", () => {
+    it("returns ok without clicking when menu already open", () => {
       const clickHandler = vi.fn();
       document.body.innerHTML = `
         <button aria-label="Settings" aria-expanded="true">Settings</button>
         <div data-radix-menu-content></div>
       `;
 
-      document
-        .querySelector("button")!
-        .addEventListener("click", clickHandler);
+      document.querySelector("button")!.addEventListener("click", clickHandler);
 
       const page = new SettingsMenuPage();
       const result = page.openSettingsMenu();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).not.toHaveBeenCalled();
     });
 
-    it("returns false when settings button not present", () => {
+    it("returns error when settings button not present", () => {
       document.body.innerHTML = `<div>Content</div>`;
 
       const page = new SettingsMenuPage();
+      const result = page.openSettingsMenu();
 
-      expect(page.openSettingsMenu()).toBe(false);
+      expect(result.isErr()).toBe(true);
     });
   });
 
@@ -153,11 +152,11 @@ describe("SettingsMenuPage", () => {
       const page = new SettingsMenuPage();
       const result = page.openMoreOptionsMenu();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns true without clicking when menu already open", () => {
+    it("returns ok without clicking when menu already open", () => {
       const clickHandler = vi.fn();
       document.body.innerHTML = `
         <button aria-label="More options" aria-expanded="true">More</button>
@@ -169,7 +168,7 @@ describe("SettingsMenuPage", () => {
       const page = new SettingsMenuPage();
       const result = page.openMoreOptionsMenu();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).not.toHaveBeenCalled();
     });
   });
@@ -241,11 +240,11 @@ describe("SettingsMenuPage", () => {
       const page = new SettingsMenuPage();
       const result = page.clickMenuItem("Fun");
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns false when menu item not found", () => {
+    it("returns error when menu item not found", () => {
       document.body.innerHTML = `
         <div data-radix-menu-content>
           <div role="menuitem" data-radix-collection-item>Other</div>
@@ -253,8 +252,9 @@ describe("SettingsMenuPage", () => {
       `;
 
       const page = new SettingsMenuPage();
+      const result = page.clickMenuItem("Nonexistent");
 
-      expect(page.clickMenuItem("Nonexistent")).toBe(false);
+      expect(result.isErr()).toBe(true);
     });
   });
 
@@ -273,7 +273,7 @@ describe("SettingsMenuPage", () => {
       const page = new SettingsMenuPage();
       const result = page.clickMoodOption("spicy");
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
@@ -291,7 +291,7 @@ describe("SettingsMenuPage", () => {
       const page = new SettingsMenuPage();
       const result = page.clickMoodOption("Fun");
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
   });
@@ -313,11 +313,11 @@ describe("SettingsMenuPage", () => {
       const page = new SettingsMenuPage();
       const result = page.clickExtendVideo();
 
-      expect(result).toBe(true);
+      expect(result.isOk()).toBe(true);
       expect(clickHandler).toHaveBeenCalled();
     });
 
-    it("returns false when Extend video item not found", () => {
+    it("returns error when Extend video item not found", () => {
       document.body.innerHTML = `
         <button aria-label="More options" aria-expanded="true">More</button>
         <div data-radix-menu-content>
@@ -326,8 +326,9 @@ describe("SettingsMenuPage", () => {
       `;
 
       const page = new SettingsMenuPage();
+      const result = page.clickExtendVideo();
 
-      expect(page.clickExtendVideo()).toBe(false);
+      expect(result.isErr()).toBe(true);
     });
   });
 

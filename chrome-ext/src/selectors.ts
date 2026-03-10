@@ -66,10 +66,7 @@ export const SELECTORS = {
 
   /** Video carousel (thumbnail strip). */
   carousel: {
-    container: [
-      '[data-testid="video-carousel"]',
-      "div.snap-y.snap-mandatory",
-    ],
+    container: ['[data-testid="video-carousel"]', "div.snap-y.snap-mandatory"],
     item: ["button.snap-center"],
     selectedClass: "ring-fg-primary",
   },

@@ -570,7 +570,7 @@ chrome.commands.onCommand.addListener(async (command) => {
           option,
         });
 
-        if (result && !result.success) {
+        if (result && !result.ok) {
           logger.error("Click video option failed:", result.error);
         }
       } catch (error) {
@@ -609,7 +609,7 @@ chrome.commands.onCommand.addListener(async (command) => {
           type: PromptMessageType.CLICK_DOWNLOAD,
         });
 
-        if (result && !result.success) {
+        if (result && !result.ok) {
           logger.error("Click download failed:", result.error);
         }
       } catch (error) {
@@ -648,7 +648,7 @@ chrome.commands.onCommand.addListener(async (command) => {
           type: PromptMessageType.EXTEND_VIDEO,
         });
 
-        if (result && !result.success) {
+        if (result && !result.ok) {
           logger.error("Extend video failed:", result.error);
         }
       } catch (error) {
@@ -693,7 +693,7 @@ chrome.commands.onCommand.addListener(async (command) => {
           type: messageType,
         });
 
-        if (result && !result.success) {
+        if (result && !result.ok) {
           logger.error("Carousel navigation failed:", result.error);
         }
       } catch (error) {
@@ -731,7 +731,7 @@ chrome.commands.onCommand.addListener(async (command) => {
           type: PromptMessageType.EXTEND_FOCUS,
         });
 
-        if (result && !result.success) {
+        if (result && !result.ok) {
           logger.error("[extend] Extend focus failed:", result.error);
         }
       } catch (error) {
@@ -830,7 +830,7 @@ chrome.commands.onCommand.addListener(async (command) => {
             text: entry.text,
           });
 
-          if (result && !result.success) {
+          if (result && !result.ok) {
             logger.error(
               "[extend] Fill and submit extend failed:",
               result.error,
@@ -860,7 +860,7 @@ chrome.commands.onCommand.addListener(async (command) => {
             text: entry.text,
           });
 
-          if (result && !result.success) {
+          if (result && !result.ok) {
             logger.error("Fill and submit failed:", result.error);
           }
         } catch (error) {
@@ -876,7 +876,7 @@ chrome.commands.onCommand.addListener(async (command) => {
             videoId,
           });
 
-          if (result && !result.success) {
+          if (result && !result.ok) {
             logger.error(
               "[extend] Submit from clipboard extend failed:",
               result.error,
@@ -896,7 +896,7 @@ chrome.commands.onCommand.addListener(async (command) => {
             sourceImageId,
           });
 
-          if (result && !result.success) {
+          if (result && !result.ok) {
             logger.error("Submit from clipboard failed:", result.error);
           }
         } catch (error) {
