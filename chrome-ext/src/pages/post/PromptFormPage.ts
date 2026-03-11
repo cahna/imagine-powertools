@@ -1,20 +1,28 @@
-import { PageObject } from "./PageObject";
-import { SELECTORS } from "../selectors";
-import { TIMEOUTS } from "../config";
-import { Result, ok, err } from "../shared/result";
-import type { DomError } from "../shared/errors";
+import { PageObject } from "../PageObject";
+import { SELECTORS } from "../../selectors";
+import { TIMEOUTS } from "../../config";
+import { PromptSettingsMenu } from "../menus";
+import { Result, ok, err } from "../../shared/result";
+import type { DomError } from "../../shared/errors";
 
 /**
- * PageObject for interacting with the video prompt input and submission.
+ * PageObject for interacting with the prompt input form and submission.
  * Supports both tiptap/ProseMirror editor and legacy textarea.
  */
-export class VideoPromptPage extends PageObject {
-  /** Returns true if a video prompt input is present. */
+export class PromptFormPage extends PageObject {
+  readonly settingsMenu: PromptSettingsMenu;
+
+  constructor(doc: Document = document) {
+    super(doc);
+    this.settingsMenu = new PromptSettingsMenu(doc);
+  }
+
+  /** Returns true if a prompt input is present. */
   isPresent(): boolean {
     return this.getInput() !== null;
   }
 
-  /** Returns the video prompt input element (tiptap editor or textarea). */
+  /** Returns the prompt input element (tiptap editor or textarea). */
   getInput(): HTMLElement | null {
     return this.$(SELECTORS.videoInput);
   }
@@ -28,7 +36,7 @@ export class VideoPromptPage extends PageObject {
   fillPrompt(text: string): Result<void, DomError> {
     const input = this.getInput();
     if (!input) {
-      return err({ type: "element_not_found", element: "video prompt input" });
+      return err({ type: "element_not_found", element: "prompt input" });
     }
 
     if (this.isTiptapEditor(input)) {
@@ -55,7 +63,7 @@ export class VideoPromptPage extends PageObject {
   fillAndSubmit(text: string): Result<void, DomError> {
     const input = this.getInput();
     if (!input) {
-      return err({ type: "element_not_found", element: "video prompt input" });
+      return err({ type: "element_not_found", element: "prompt input" });
     }
 
     const button = this.getMakeVideoButton();
@@ -83,11 +91,11 @@ export class VideoPromptPage extends PageObject {
     return this.$(SELECTORS.extend.placeholder) !== null;
   }
 
-  /** Focuses the video prompt input. */
+  /** Focuses the prompt input. */
   focus(): Result<void, DomError> {
     const input = this.getInput();
     if (!input) {
-      return err({ type: "element_not_found", element: "video prompt input" });
+      return err({ type: "element_not_found", element: "prompt input" });
     }
 
     input.focus();

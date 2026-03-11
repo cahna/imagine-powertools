@@ -2,15 +2,15 @@
 // These are imported by both content.ts and tests
 
 import { logger } from "./shared/logger";
-import { TIMEOUTS } from "./config";
+import { TIMEOUTS, isFavoritesPath } from "./config";
 import {
   NotificationsPage,
   GenerationStatusPage,
-  VideoCarouselPage,
-  VideoPromptPage,
-  SettingsMenuPage,
+  MoreOptionsMenu,
+  PromptSettingsMenu,
   type GenerationOutcome,
 } from "./pages";
+import { VideoCarouselPage, PromptFormPage } from "./pages/post";
 import { Result, ok, err } from "./shared/result";
 import type { DomError } from "./shared/errors";
 
@@ -23,18 +23,15 @@ export type Mode = "favorites" | "results" | "post" | "post-extend" | "none";
 const notificationsPage = new NotificationsPage();
 const generationStatusPage = new GenerationStatusPage();
 const videoCarouselPage = new VideoCarouselPage();
-const videoPromptPage = new VideoPromptPage();
-const settingsMenuPage = new SettingsMenuPage();
+const promptFormPage = new PromptFormPage();
+const moreOptionsMenu = new MoreOptionsMenu();
+const promptSettingsMenu = new PromptSettingsMenu();
 
 // Detect the current mode based on URL and page content
 export function detectMode(): Mode {
   const pathname = window.location.pathname;
 
-  if (
-    pathname === "/imagine/favorites" ||
-    pathname === "/imagine/saved" ||
-    pathname.startsWith("/imagine/saved/")
-  ) {
+  if (isFavoritesPath(pathname)) {
     return "favorites";
   }
 
@@ -94,7 +91,7 @@ export function waitForElement(
 
 /** Finds a menu item by its text content. */
 export function findMenuItemByText(text: string): Element | null {
-  return settingsMenuPage.findMenuItem(text);
+  return promptSettingsMenu.findMenuItem(text);
 }
 
 // Set value on a React-controlled input/textarea
@@ -139,7 +136,7 @@ export function setTiptapContent(element: HTMLElement, text: string): void {
 
 /** Fills the video prompt and clicks the Make video button. */
 export function fillAndSubmitVideo(text: string): Result<void, DomError> {
-  return videoPromptPage.fillAndSubmit(text);
+  return promptFormPage.fillAndSubmit(text);
 }
 
 /** Clicks a mood option from the Settings dropdown menu. */
@@ -147,13 +144,13 @@ export async function clickMoodOptionFromMenu(
   option: string,
 ): Promise<Result<void, DomError>> {
   // Open menu if needed
-  const openResult = settingsMenuPage.openSettingsMenu();
+  const openResult = promptSettingsMenu.open();
   if (openResult.isErr()) {
     return openResult;
   }
 
   // Wait for menu to appear if it wasn't already open
-  if (!settingsMenuPage.isSettingsMenuOpen()) {
+  if (!promptSettingsMenu.isOpen()) {
     const menuContent = await waitForElement(
       "[data-radix-menu-content]",
       TIMEOUTS.menuWait,
@@ -166,7 +163,9 @@ export async function clickMoodOptionFromMenu(
   }
 
   // Click the mood option
-  return settingsMenuPage.clickMoodOption(option);
+  return promptSettingsMenu.clickMoodOption(
+    option as "spicy" | "fun" | "normal",
+  );
 }
 
 // Click a video option (duration, resolution, or mood)
@@ -268,12 +267,12 @@ export async function clickVideoOption(
 
 /** Checks if the UI is currently in "extend video" mode. */
 export function isInExtendMode(): boolean {
-  return videoPromptPage.isInExtendMode();
+  return promptFormPage.isInExtendMode();
 }
 
 /** Clicks the Make video button. */
 export function clickMakeVideoButton(): Result<void, DomError> {
-  return videoPromptPage.submit();
+  return promptFormPage.submit();
 }
 
 /**
@@ -359,13 +358,13 @@ export async function clickExtendVideoFromMenu(): Promise<
   }
 
   // 2. Open more options menu
-  const openResult = settingsMenuPage.openMoreOptionsMenu();
+  const openResult = moreOptionsMenu.open();
   if (openResult.isErr()) {
     return openResult;
   }
 
   // 3. Wait for menu to appear if it wasn't already open
-  if (!settingsMenuPage.isMoreOptionsMenuOpen()) {
+  if (!moreOptionsMenu.isOpen()) {
     const menuContent = await waitForElement(
       "[data-radix-menu-content]",
       TIMEOUTS.menuWait,
@@ -378,7 +377,7 @@ export async function clickExtendVideoFromMenu(): Promise<
   }
 
   // 4. Click "Extend video" menuitem
-  const clickResult = settingsMenuPage.clickExtendVideo();
+  const clickResult = moreOptionsMenu.clickExtendVideo();
   if (clickResult.isErr()) {
     // Log available menu items for debugging
     const allItems = document.querySelectorAll(

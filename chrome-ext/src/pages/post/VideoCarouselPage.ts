@@ -1,7 +1,7 @@
-import { PageObject } from "./PageObject";
-import { SELECTORS, selectFirst, selectAllFirst } from "../selectors";
-import { Result, ok, err } from "../shared/result";
-import type { DomError } from "../shared/errors";
+import { PageObject } from "../PageObject";
+import { SELECTORS, selectFirst, selectAllFirst } from "../../selectors";
+import { Result, ok, err } from "../../shared/result";
+import type { DomError } from "../../shared/errors";
 
 /**
  * PageObject for interacting with the video thumbnail carousel.

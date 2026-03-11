@@ -6,6 +6,14 @@ export {
   GenerationStatusPage,
   type GenerationOutcome,
 } from "./GenerationStatusPage";
-export { VideoCarouselPage } from "./VideoCarouselPage";
-export { VideoPromptPage } from "./VideoPromptPage";
-export { SettingsMenuPage } from "./SettingsMenuPage";
+
+// Menu PageObjects
+export { MoreOptionsMenu, PromptSettingsMenu } from "./menus";
+
+// Post page PageObjects
+export {
+  PostPage,
+  ToolbarPage,
+  PromptFormPage,
+  VideoCarouselPage,
+} from "./post";

@@ -389,7 +389,7 @@ describe("fillAndSubmitVideo", () => {
     expect(result.isErr()).toBe(true);
     const error = result._unsafeUnwrapErr();
     expect(error.type).toBe("element_not_found");
-    expect(error).toHaveProperty("element", "video prompt input");
+    expect(error).toHaveProperty("element", "prompt input");
   });
 
   it("returns error when Make video button not found", () => {

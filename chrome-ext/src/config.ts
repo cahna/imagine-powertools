@@ -93,8 +93,15 @@ export const URL_PATTERNS = {
 
 /** Page path patterns for mode detection. */
 export const PATHS = {
+  /** Favorites page paths (includes /imagine/saved/{id} sub-routes). */
   favorites: ["/imagine/favorites", "/imagine/saved"],
-  favoritesPrefix: "/imagine/saved/",
   post: "/imagine/post/",
   imagine: "/imagine",
 } as const;
+
+/** Checks if a pathname matches any favorites route (exact or sub-route). */
+export function isFavoritesPath(pathname: string): boolean {
+  return PATHS.favorites.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
