@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Critical Notes
+
+**NEVER use the chrome-devtools MCP tool** for testing or interacting with Grok Imagine pages. It does not work with credentials and is detected as a bot, which triggers Cloudflare to block access. You may try using the Chrome DevTools Protocol HTTP API directly instead (e.g., via curl to `http://localhost:9222`).
+
 ## Build Commands
 
 - `npm run build` - Production build to `dist/`
@@ -49,19 +53,43 @@ Chrome Manifest V3 extension for adding power-user features to Imagine (grok.com
 - Light theme in `:root`, dark theme in `[data-theme="dark"]`
 - Linked from both `popup.html` and `data.html`
 
-**content.ts** - Injected into `grok.com/imagine*` pages:
+**content.ts** - Entry point injected into `grok.com/imagine*` pages (~400 lines):
 
-- Mode detection: `favorites`, `results`, `post`, or `none`
-- DOM manipulation for filling prompts (supports both textarea and tiptap/ProseMirror contenteditable)
-- Video option clicking via radiogroup buttons or Settings dropdown menu
-- History interception via `pushState`/`replaceState` patching for SPA navigation
-- Alt+Shift+Click handler to open images in new tabs
-- Autosubmit feature with retry logic for moderated results
+- Message routing to appropriate handlers
+- Initialization of navigation patching and autosubmit
+- Delegates to handlers/ modules for actual functionality
 
-**content.core.ts** - Testable functions extracted from content.ts:
+**content.core.ts** - Testable DOM interaction functions:
 
-- Exported for use by both content.ts and tests
 - `detectMode()`, `clickVideoOption()`, `fillAndSubmitVideo()`, `detectGenerationOutcome()`, etc.
+- Uses PageObjects for DOM queries and actions
+- Exported for use by handlers and tests
+
+**handlers/** - Focused handler modules split from content.ts:
+
+- `storage.ts` - Storage operations via message passing to background script
+- `navigation.ts` - Mode detection, history interception for SPA navigation
+- `urlExtraction.ts` - UUID extraction from URLs and DOM elements
+- `favoritesClick.ts` - Alt+Shift+Click handler to open images in new tabs
+- `autosubmit.ts` - XState state machine integration, retry loop for moderated results
+
+**pages/** - PageObject pattern for DOM interactions:
+
+- `PageObject.ts` - Base class with `$()` and `$$()` query helpers, document injection
+- `GenerationStatusPage.ts` - Detects generation outcomes (success, moderated, error)
+- `NotificationsPage.ts` - Toast notification detection and dismissal
+
+**pages/menus/** - Menu PageObjects:
+
+- `MoreOptionsMenu.ts` - Toolbar's "More options" popup (delete, thumbs, extend)
+- `PromptSettingsMenu.ts` - Prompt area's "Settings" popup (mood, redo, extend)
+
+**pages/post/** - Post page PageObjects:
+
+- `PostPage.ts` - Composite facade providing access to all post page components
+- `ToolbarPage.ts` - Right-side toolbar (download, save, share, redo, media type switcher)
+- `PromptFormPage.ts` - Prompt input form (tiptap editor or textarea)
+- `VideoCarouselPage.ts` - Video carousel navigation and selection
 
 **popup/popup.ts** - Extension popup UI:
 
@@ -70,6 +98,13 @@ Chrome Manifest V3 extension for adding power-user features to Imagine (grok.com
 - Data tab: JSON import/export of prompt history
 
 ### Key Patterns
+
+**PageObject Pattern**: DOM interactions are encapsulated in PageObject classes (`src/pages/`). Each PageObject:
+
+- Accepts optional `document` parameter for testing with custom DOM
+- Provides `isPresent()` to check if the component exists
+- Returns `Result<T, DomError>` for fallible operations (using neverthrow)
+- Composite PageObjects (e.g., `PostPage`) provide structured access to child components
 
 **Mode Detection**: The content script detects page state via URL patterns and DOM elements (e.g., presence of Back button indicates results mode).
 
@@ -93,10 +128,11 @@ Uses Vitest with jsdom for behavioral tests. Key files:
 
 - `vitest.config.ts` - Test configuration
 - `src/test/setup.ts` - Chrome API mocks
-- `src/content.test.ts` - Behavioral tests for content script functions
-- `src/content.core.ts` - Functions extracted from content.ts to enable testing
+- `src/content.test.ts` - Behavioral tests for content.core.ts functions
+- `src/pages/**/*.test.ts` - PageObject unit tests (DOM queries, actions)
+- `src/machines/*.test.ts` - XState machine tests
 
-Tests verify DOM interactions like clicking video options, filling prompts, and detecting page state. This catches bugs like accidentally removing helper functions that are still called.
+Tests verify DOM interactions like clicking video options, filling prompts, and detecting page state. PageObject tests verify element detection and document injection scoping.
 
 ## Contributing Guidelines
 
@@ -107,6 +143,17 @@ Tests verify DOM interactions like clicking video options, filling prompts, and 
 - **Docstrings**: Add JSDoc-style docstrings (`/** ... */`) to all functions describing what they do. Focus on the "what" not the "how". No need to document parameters or return types (TypeScript handles that).
 
 - **Const Objects over Enums**: Prefer `as const` objects over TypeScript enums for better tree-shaking and runtime behavior.
+
+### Selector Arrays
+
+- **Never use `[0]` on selector arrays** - always iterate through all selectors using `selectFirst()` or pass the full array to functions that support it
+- When a utility only accepts a single selector but you need fallback support, extend the utility to accept `string | readonly string[]` rather than working around it
+
+### Reusing Existing Infrastructure
+
+- Before writing inline DOM queries, check if a PageObject or helper already exists for that purpose
+- When adding new functionality, prefer extending existing utilities over duplicating logic
+- If the same pattern appears in multiple handlers, extract it into a shared helper in `content.core.ts`
 
 ### CSS & Theming
 
@@ -156,6 +203,7 @@ This script automates setting all shortcuts to `Alt+Shift+<key>` at once.
 
 ### Pre-commit Checklist
 
+- [ ] Add tests for new PageObjects in `src/pages/**/*.test.ts`
 - [ ] Add tests for new DOM interactions in `content.test.ts`
 - [ ] Add tests for any new/changed "pure" utility functions
 - [ ] Run `npx prettier --write .`

@@ -3,6 +3,7 @@
 
 import { logger } from "./shared/logger";
 import { TIMEOUTS, isFavoritesPath } from "./config";
+import { selectFirst } from "./selectors";
 import {
   NotificationsPage,
   GenerationStatusPage,
@@ -55,14 +56,19 @@ export function detectMode(): Mode {
   return "none";
 }
 
-// Wait for an element to appear in the DOM
+/** Waits for an element matching any of the provided selectors to appear in the DOM. */
 export function waitForElement(
-  selector: string,
+  selectors: string | readonly string[],
   timeout = 2000,
 ): Promise<Element | null> {
+  const selectorArray = typeof selectors === "string" ? [selectors] : selectors;
+
+  const findElement = (): Element | null =>
+    selectFirst(document, selectorArray);
+
   return new Promise((resolve) => {
     // Check if element already exists
-    const existing = document.querySelector(selector);
+    const existing = findElement();
     if (existing) {
       resolve(existing);
       return;
@@ -74,7 +80,7 @@ export function waitForElement(
     }, timeout);
 
     const observer = new MutationObserver(() => {
-      const element = document.querySelector(selector);
+      const element = findElement();
       if (element) {
         clearTimeout(timeoutId);
         observer.disconnect();

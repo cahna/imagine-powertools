@@ -160,22 +160,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
 
-      // Wait for form to change to extend mode
-      const exitBtn = await waitForElement(
-        'button[aria-label="Exit extend mode"]',
-        1000,
-      );
+      // Wait for form to change to extend mode (exit button or placeholder)
+      const exitBtn = await waitForElement(SELECTORS.extend.exitButton, 500);
       if (!exitBtn) {
-        sendResponse(
-          serialize(
-            err({
-              type: "timeout",
-              operation: "extend mode activation",
-              ms: 1000,
-            } as DomError),
-          ),
+        // Fallback: check for placeholder
+        const extendPlaceholder = await waitForElement(
+          SELECTORS.extend.placeholder,
+          500,
         );
-        return;
+        if (!extendPlaceholder) {
+          sendResponse(
+            serialize(
+              err({
+                type: "timeout",
+                operation: "extend mode activation",
+                ms: 1000,
+              } as DomError),
+            ),
+          );
+          return;
+        }
       }
 
       // Small delay to let UI settle
@@ -212,22 +216,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse(serialize(result));
           return;
         }
-        // Wait for extend mode UI
-        const exitBtn = await waitForElement(
-          'button[aria-label="Exit extend mode"]',
-          1000,
-        );
+        // Wait for extend mode UI (exit button or placeholder)
+        const exitBtn = await waitForElement(SELECTORS.extend.exitButton, 500);
         if (!exitBtn) {
-          sendResponse(
-            serialize(
-              err({
-                type: "timeout",
-                operation: "extend mode activation",
-                ms: 1000,
-              } as DomError),
-            ),
+          const extendPlaceholder = await waitForElement(
+            SELECTORS.extend.placeholder,
+            500,
           );
-          return;
+          if (!extendPlaceholder) {
+            sendResponse(
+              serialize(
+                err({
+                  type: "timeout",
+                  operation: "extend mode activation",
+                  ms: 1000,
+                } as DomError),
+              ),
+            );
+            return;
+          }
         }
         await new Promise((r) => setTimeout(r, 100));
       }
