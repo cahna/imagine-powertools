@@ -283,29 +283,30 @@ export function clickMakeVideoButton(): Result<void, DomError> {
 
 /**
  * Recovers extend mode for a specific video after moderation.
- * 1. Navigates to the video in the carousel
+ * 1. Clicks carousel to select the source video (switches away from moderated)
  * 2. Waits for the video to load
  * 3. Enters extend mode
  */
 export async function recoverExtendModeForVideo(
   videoId: string,
 ): Promise<Result<void, DomError>> {
-  // Step 1: Navigate to the source video in the carousel
+  // Step 1: Click the carousel to select the source video
+  // This switches away from the currently-displayed moderated video
+  logger.log(`recoverExtendModeForVideo: selecting video ${videoId}`);
   const selectResult = videoCarouselPage.selectByVideoId(videoId);
   if (selectResult.isErr()) {
+    logger.log(`recoverExtendModeForVideo: carousel select failed`);
     return selectResult;
   }
 
-  // Initial delay to let React update the video player
-  await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.videoLoadPoll));
-
-  // Step 2: Wait for the video to load (poll until success or max attempts)
+  // Step 2: Wait for the video to load after carousel selection
+  // React needs time to update the video player with the new src
   let outcome: GenerationOutcome = { type: "unknown" };
-  for (let i = 0; i < TIMEOUTS.videoLoadPollAttempts; i++) {
+  for (let i = 0; i < TIMEOUTS.videoLoadPollAttempts * 2; i++) {
     await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.videoLoadPoll));
     outcome = generationStatusPage.detectOutcome();
     logger.log(
-      `recoverExtendModeForVideo: attempt ${i + 1}, state=${outcome.type}`,
+      `recoverExtendModeForVideo: video load attempt ${i + 1}, state=${outcome.type}`,
     );
     if (outcome.type === "success") {
       break;
