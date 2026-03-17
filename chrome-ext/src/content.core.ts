@@ -3,7 +3,7 @@
 
 import { logger } from "./shared/logger";
 import { TIMEOUTS, isFavoritesPath } from "./config";
-import { selectFirst } from "./selectors";
+import { selectFirst, SELECTORS } from "./selectors";
 import {
   NotificationsPage,
   GenerationStatusPage,
@@ -296,9 +296,12 @@ export async function recoverExtendModeForVideo(
     return selectResult;
   }
 
-  // Step 2: Wait for the video to load (poll for up to 3 seconds)
+  // Initial delay to let React update the video player
+  await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.videoLoadPoll));
+
+  // Step 2: Wait for the video to load (poll until success or max attempts)
   let outcome: GenerationOutcome = { type: "unknown" };
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < TIMEOUTS.videoLoadPollAttempts; i++) {
     await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.videoLoadPoll));
     outcome = generationStatusPage.detectOutcome();
     logger.log(
@@ -332,7 +335,7 @@ export async function recoverExtendModeForVideo(
 
   // Wait for extend mode to activate (check for "Extend video" placeholder)
   const extendPlaceholder = await waitForElement(
-    '[data-placeholder="Extend video"]',
+    SELECTORS.extend.placeholder,
     TIMEOUTS.extendModeActivation,
   );
   if (!extendPlaceholder) {

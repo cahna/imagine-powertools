@@ -788,7 +788,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       return;
     }
 
-    const { mode, sourceImageId } = modeResponse;
+    const { mode, sourceImageId, postId } = modeResponse;
     const isExtendMode = mode === "post-extend";
 
     // Allow both "post" and "post-extend" modes
@@ -797,13 +797,23 @@ chrome.commands.onCommand.addListener(async (command) => {
       return;
     }
 
-    if (!sourceImageId) {
-      logger.log("No source image ID available");
-      return;
+    // For extend mode, we need the video ID (from URL postId)
+    // For normal post mode, we need the source image ID
+    if (isExtendMode) {
+      if (!postId) {
+        logger.log("[extend] No post ID (video ID) available");
+        return;
+      }
+    } else {
+      if (!sourceImageId) {
+        logger.log("No source image ID available");
+        return;
+      }
     }
 
-    // In extend mode, sourceImageId is actually the video ID
-    const videoId = sourceImageId;
+    // Use the correct ID based on mode
+    const videoId = postId; // Video UUID from URL for extend operations
+    const imageId = sourceImageId; // Source image UUID for post operations
 
     if (command === "resubmit-last") {
       if (isExtendMode) {
@@ -841,17 +851,17 @@ chrome.commands.onCommand.addListener(async (command) => {
         }
       } else {
         // Normal mode: use post history
-        const entry = await getMostRecentHistoryEntry(sourceImageId);
+        const entry = await getMostRecentHistoryEntry(imageId!);
 
         if (!entry) {
-          logger.log("No history entries for source image:", sourceImageId);
+          logger.log("No history entries for source image:", imageId);
           return;
         }
 
         logger.log("Re-submitting:", entry.text.substring(0, 50) + "...");
 
         // Update history (increments submitCount) and invalidate cache
-        await cachedSaveToPostHistory(sourceImageId, entry.text);
+        await cachedSaveToPostHistory(imageId!, entry.text);
 
         // Send fillAndSubmit to the content script
         try {
@@ -893,7 +903,7 @@ chrome.commands.onCommand.addListener(async (command) => {
         try {
           const result = await chrome.tabs.sendMessage(tab.id, {
             type: PromptMessageType.SUBMIT_FROM_CLIPBOARD,
-            sourceImageId,
+            sourceImageId: imageId,
           });
 
           if (result && !result.ok) {
@@ -934,10 +944,10 @@ chrome.commands.onCommand.addListener(async (command) => {
         }
       } else {
         // Normal mode: use post history
-        const entry = await getMostRecentHistoryEntry(sourceImageId);
+        const entry = await getMostRecentHistoryEntry(imageId!);
 
         if (!entry) {
-          logger.log("No history entries for source image:", sourceImageId);
+          logger.log("No history entries for source image:", imageId);
           return;
         }
 
