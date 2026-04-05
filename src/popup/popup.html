@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ImaginePowerTools</title>
+    <link rel="stylesheet" href="../shared/variables.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>ImaginePowerTools</h1>
+
+      <!-- Tab navigation -->
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="main">Main</button>
+        <button class="tab-btn" data-tab="jobs">Jobs</button>
+        <button class="tab-btn" data-tab="data">Data</button>
+        <button class="tab-btn" data-tab="settings">Settings</button>
+      </div>
+
+      <!-- Main tab content -->
+      <div id="tab-main" class="tab-content active">
+        <div class="mode-section">
+          <span class="mode-label">Current Mode:</span>
+          <span id="mode-badge" class="mode-badge">Loading...</span>
+        </div>
+        <p id="status" class="status"></p>
+
+        <!-- Post mode UI -->
+        <div id="post-ui" class="post-ui hidden">
+          <form id="post-form" class="post-form">
+            <textarea
+              id="post-input"
+              class="post-input"
+              placeholder="Enter text..."
+              rows="3"
+            ></textarea>
+            <button type="submit" class="submit-btn">Submit</button>
+          </form>
+
+          <!-- Autosubmit row -->
+          <div class="autosubmit-row">
+            <label class="autosubmit-label">
+              Retries:
+              <input
+                type="number"
+                id="autosubmit-count"
+                class="autosubmit-input"
+                min="1"
+                max="100"
+                value="10"
+              />
+            </label>
+            <button type="button" id="autosubmit-btn" class="autosubmit-btn">
+              Autosubmit
+            </button>
+          </div>
+
+          <!-- Autosubmit status (shown when running) -->
+          <div id="autosubmit-status" class="autosubmit-status hidden">
+            <span id="autosubmit-progress">Attempt 1/10 - Submitting...</span>
+            <button type="button" id="autosubmit-cancel" class="cancel-btn">
+              Cancel
+            </button>
+          </div>
+          <div class="history-section">
+            <h2 class="history-title">History</h2>
+            <ul id="history-list" class="history-list">
+              <li class="history-empty">No entries yet</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Jobs tab content -->
+      <div id="tab-jobs" class="tab-content">
+        <div id="jobs-list" class="jobs-list"></div>
+        <div id="no-jobs" class="empty-state">No active jobs</div>
+      </div>
+
+      <!-- Data tab content -->
+      <div id="tab-data" class="tab-content">
+        <p class="data-description">
+          Import, export, and manage your prompt history.
+        </p>
+        <button id="open-data-page" class="action-btn">
+          Open Data Manager
+        </button>
+
+        <!-- Theme toggle -->
+        <div class="theme-section">
+          <span class="theme-label">Theme:</span>
+          <select id="theme-select" class="theme-select">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+
+        <!-- Shortcuts Setup (shown on chrome://extensions/shortcuts) -->
+        <div id="shortcuts-section" class="shortcuts-section hidden">
+          <h2 class="section-title">Keyboard Shortcuts Setup</h2>
+          <p class="shortcuts-instructions">
+            Copy the script below and paste it into DevTools console (F12) on
+            this page to auto-set all hotkeys.
+          </p>
+          <button id="copy-shortcuts-script" class="action-btn">
+            Copy Setup Script
+          </button>
+          <p id="shortcuts-status" class="import-status hidden"></p>
+          <details class="shortcuts-reference">
+            <summary>Hotkey Reference</summary>
+            <table class="hotkeys-table">
+              <tr>
+                <td>Alt+Shift+R</td>
+                <td>Re-submit last (context-aware)</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+P</td>
+                <td>Submit clipboard (context-aware)</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+A</td>
+                <td>Autosubmit</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+E</td>
+                <td>Extend video (submit)</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+W</td>
+                <td>Extend mode + focus</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+H</td>
+                <td>Previous tab</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+L</td>
+                <td>Next tab</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+K</td>
+                <td>Carousel prev</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+J</td>
+                <td>Carousel next</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+6</td>
+                <td>6s / +6s duration</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+0</td>
+                <td>10s / +10s duration</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+,</td>
+                <td>480p</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+.</td>
+                <td>720p</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+X</td>
+                <td>Spicy mood</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+F</td>
+                <td>Fun mood</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+N</td>
+                <td>Normal mood</td>
+              </tr>
+              <tr>
+                <td>Alt+Shift+D</td>
+                <td>Download</td>
+              </tr>
+            </table>
+          </details>
+        </div>
+      </div>
+
+      <!-- Settings tab content -->
+      <div id="tab-settings" class="tab-content">
+        <h2 class="section-title">Background Tab Workarounds</h2>
+        <p class="workaround-description">
+          Enable workarounds to keep autosubmit running when tabs are not
+          focused.
+        </p>
+        <div id="workaround-toggles" class="workaround-toggles">
+          <!-- Dynamically populated by popup.ts -->
+        </div>
+      </div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

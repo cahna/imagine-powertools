@@ -1,0 +1,31 @@
+{
+  "name": "chrome-extension",
+  "version": "1.0.0",
+  "description": "Chrome browser extension",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch scripts/build.ts",
+    "build": "tsx scripts/build.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write .",
+    "prepare": "cd .. && husky chrome-ext/.husky"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^25.0.6",
+    "esbuild": "^0.24.2",
+    "husky": "^9.1.7",
+    "jsdom": "^28.1.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.18",
+    "ws": "^8.19.0"
+  },
+  "dependencies": {
+    "neverthrow": "^8.2.0",
+    "xstate": "^5.28.0"
+  }
+}
