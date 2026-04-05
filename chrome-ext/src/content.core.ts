@@ -281,35 +281,101 @@ export function clickMakeVideoButton(): Result<void, DomError> {
   return promptFormPage.submit();
 }
 
+/** Forces video element to reload by clearing and restoring src. For already-selected carousel recovery. */
+async function forceVideoReload(): Promise<boolean> {
+  const sdVideo = document.querySelector<HTMLVideoElement>("video#sd-video");
+  const hdVideo = document.querySelector<HTMLVideoElement>("video#hd-video");
+  const video = sdVideo || hdVideo;
+
+  if (!video || !video.src) {
+    return false;
+  }
+
+  const originalSrc = video.src;
+
+  // Clear src to force unload
+  video.src = "";
+  video.load();
+
+  // Small delay for browser to process
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  // Restore src to trigger reload
+  video.src = originalSrc;
+  video.load();
+
+  return true;
+}
+
 /**
  * Recovers extend mode for a specific video after moderation.
- * 1. Clicks carousel to select the source video (switches away from moderated)
- * 2. Waits for the video to load
- * 3. Enters extend mode
+ * 1. Waits for page to settle after moderation URL revert
+ * 2. Clicks carousel to select the source video (if not already showing)
+ * 3. Waits for the video to load
+ * 4. Enters extend mode
  */
 export async function recoverExtendModeForVideo(
   videoId: string,
 ): Promise<Result<void, DomError>> {
-  // Step 1: Click the carousel to select the source video
-  // This switches away from the currently-displayed moderated video
-  logger.log(`recoverExtendModeForVideo: selecting video ${videoId}`);
-  const selectResult = videoCarouselPage.selectByVideoId(videoId);
-  if (selectResult.isErr()) {
-    logger.log(`recoverExtendModeForVideo: carousel select failed`);
-    return selectResult;
-  }
+  // Note: We no longer wait for tab visibility here.
+  // The audio keep-alive workaround (if enabled) prevents tab throttling,
+  // allowing React to render properly even in background tabs.
 
-  // Step 2: Wait for the video to load after carousel selection
-  // React needs time to update the video player with the new src
-  let outcome: GenerationOutcome = { type: "unknown" };
-  for (let i = 0; i < TIMEOUTS.videoLoadPollAttempts * 2; i++) {
-    await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.videoLoadPoll));
-    outcome = generationStatusPage.detectOutcome();
+  // Step 1: Initial delay to let the page settle after moderation URL revert
+  // React needs time to update the DOM after navigation
+  logger.log(`recoverExtendModeForVideo: waiting for page to settle...`);
+  await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.videoLoadPoll));
+
+  // Step 2: Check if video is already loaded (might happen if correct item was already selected)
+  let outcome = generationStatusPage.detectOutcome();
+  logger.log(`recoverExtendModeForVideo: initial state=${outcome.type}`);
+
+  if (outcome.type === "success") {
+    logger.log(`recoverExtendModeForVideo: video already loaded`);
+  } else {
+    // Strategy: Try BOTH carousel click AND forceVideoReload to handle all timing scenarios
+    // - Carousel click: works when item isn't selected yet
+    // - forceVideoReload: works when item is already selected (click would be no-op)
+    // Due to React timing, isVideoSelected() can return false even when selected,
+    // so we try both approaches to be robust.
+
+    // Step 1: Click carousel item (may be no-op if already selected, but harmless)
+    logger.log(`recoverExtendModeForVideo: clicking carousel for ${videoId}`);
+    const selectResult = videoCarouselPage.selectByVideoId(videoId);
+    if (selectResult.isErr()) {
+      logger.log(`recoverExtendModeForVideo: carousel select failed`);
+      // Don't return early - forceVideoReload might still work
+    }
+
+    // Small delay for click to register
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Step 2: Try force reload (works if video element has src but player is stuck)
+    logger.log(`recoverExtendModeForVideo: attempting force video reload`);
+    const reloaded = await forceVideoReload();
     logger.log(
-      `recoverExtendModeForVideo: video load attempt ${i + 1}, state=${outcome.type}`,
+      `recoverExtendModeForVideo: force reload ${reloaded ? "succeeded" : "failed (no video src)"}`,
     );
-    if (outcome.type === "success") {
-      break;
+
+    // Wait for the video to load (with generous timeout for stability)
+    for (let i = 0; i < TIMEOUTS.videoLoadPollAttempts * 3; i++) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, TIMEOUTS.videoLoadPoll),
+      );
+      outcome = generationStatusPage.detectOutcome();
+      logger.log(
+        `recoverExtendModeForVideo: video load attempt ${i + 1}, state=${outcome.type}`,
+      );
+      if (outcome.type === "success") {
+        break;
+      }
+
+      // Mid-polling: if we haven't succeeded and forceVideoReload failed initially,
+      // the video src might now be populated - try again
+      if (i === 5 && !reloaded) {
+        logger.log(`recoverExtendModeForVideo: retrying force reload`);
+        await forceVideoReload();
+      }
     }
   }
 

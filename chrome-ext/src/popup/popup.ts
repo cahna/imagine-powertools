@@ -22,6 +22,11 @@ import {
   setThemePreference,
   ThemePreference,
 } from "../shared/theme";
+import {
+  getAllWorkarounds,
+  getWorkaroundSettings,
+  toggleWorkaround,
+} from "../shared/workarounds";
 
 type Mode = "favorites" | "results" | "post" | "post-extend" | "none";
 
@@ -479,6 +484,52 @@ function generateShortcutsScript(): string {
 })();`;
 }
 
+/** Renders the workaround toggles in the Settings tab. */
+async function renderWorkaroundSettings(): Promise<void> {
+  const container = document.getElementById("workaround-toggles");
+  if (!container) return;
+
+  const settings = await getWorkaroundSettings();
+  const workarounds = getAllWorkarounds();
+
+  container.innerHTML = "";
+
+  for (const workaround of workarounds) {
+    const isEnabled = settings.enabledWorkarounds.includes(workaround.id);
+
+    const toggle = document.createElement("div");
+    toggle.className = "workaround-toggle";
+
+    const label = document.createElement("label");
+    label.className = "workaround-label";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = isEnabled;
+    checkbox.dataset.workaround = workaround.id;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "workaround-name";
+    nameSpan.textContent = workaround.name;
+
+    label.appendChild(checkbox);
+    label.appendChild(nameSpan);
+
+    const descP = document.createElement("p");
+    descP.className = "workaround-desc";
+    descP.textContent = workaround.description;
+
+    toggle.appendChild(label);
+    toggle.appendChild(descP);
+    container.appendChild(toggle);
+
+    // Handle toggle changes
+    checkbox.addEventListener("change", async () => {
+      await toggleWorkaround(workaround.id, checkbox.checked);
+    });
+  }
+}
+
 /** Sets up the click handler for copying the shortcuts script to clipboard. */
 function setupShortcutsScriptHandler(): void {
   const copyBtn = document.getElementById("copy-shortcuts-script");
@@ -544,6 +595,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Load jobs when Jobs tab is clicked
       if (targetTab === "jobs" && jobsList && noJobsEl) {
         loadJobs(jobsList, noJobsEl);
+      }
+
+      // Load workaround settings when Settings tab is clicked
+      if (targetTab === "settings") {
+        renderWorkaroundSettings();
       }
     });
   });

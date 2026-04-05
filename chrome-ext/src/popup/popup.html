@@ -16,6 +16,7 @@
         <button class="tab-btn active" data-tab="main">Main</button>
         <button class="tab-btn" data-tab="jobs">Jobs</button>
         <button class="tab-btn" data-tab="data">Data</button>
+        <button class="tab-btn" data-tab="settings">Settings</button>
       </div>
 
       <!-- Main tab content -->
@@ -181,6 +182,18 @@
               </tr>
             </table>
           </details>
+        </div>
+      </div>
+
+      <!-- Settings tab content -->
+      <div id="tab-settings" class="tab-content">
+        <h2 class="section-title">Background Tab Workarounds</h2>
+        <p class="workaround-description">
+          Enable workarounds to keep autosubmit running when tabs are not
+          focused.
+        </p>
+        <div id="workaround-toggles" class="workaround-toggles">
+          <!-- Dynamically populated by popup.ts -->
         </div>
       </div>
     </div>

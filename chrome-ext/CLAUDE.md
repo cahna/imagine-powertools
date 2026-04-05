@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **NEVER use the chrome-devtools MCP tool** for testing or interacting with Grok Imagine pages. It does not work with credentials and is detected as a bot, which triggers Cloudflare to block access. You may try using the Chrome DevTools Protocol HTTP API directly instead (e.g., via curl to `http://localhost:9222`).
 
+**Autosubmit: Stability over Speed** - For autosubmit functionality, prioritize reliability over performance. Longer timeouts and more polling attempts are preferred over failed operations. The extension doesn't need to be fast if waiting longer makes it more stable.
+
 ## Build Commands
 
 - `npm run build` - Production build to `dist/`

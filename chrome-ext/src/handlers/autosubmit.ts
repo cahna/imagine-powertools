@@ -35,6 +35,7 @@ import {
   type HistoryEntry,
 } from "./storage";
 import { getPostId, getSourceImageId } from "./urlExtraction";
+import { startWorkarounds, stopWorkarounds } from "../shared/workarounds";
 
 /** Legacy state type for backward compatibility with popup/background communication. */
 export type AutosubmitState =
@@ -167,6 +168,9 @@ export async function runAutosubmit(
   logger.log(
     `${logPrefix}Starting autosubmit with maxRetries=${maxRetries}, isExtend=${isExtend}`,
   );
+
+  // Start enabled workarounds (e.g., audio keep-alive to prevent tab throttling)
+  await startWorkarounds();
 
   autosubmitAbortController = new AbortController();
   const signal = autosubmitAbortController.signal;
@@ -508,6 +512,10 @@ export async function runAutosubmit(
     autosubmitActor.stop();
     autosubmitActor = null;
   }
+
+  // Stop workarounds (e.g., stop audio keep-alive)
+  await stopWorkarounds();
+
   logger.log("Autosubmit finished, final state:", getAutosubmitState());
 }
 

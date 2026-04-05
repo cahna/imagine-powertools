@@ -9,12 +9,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prepare": "cd .. && husky chrome-ext/.husky"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
     "@types/node": "^25.0.6",
     "esbuild": "^0.24.2",
+    "husky": "^9.1.7",
     "jsdom": "^28.1.0",
     "prettier": "^3.8.1",
     "tsx": "^4.19.2",

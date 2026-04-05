@@ -135,6 +135,18 @@ export class VideoCarouselPage extends PageObject {
     });
   }
 
+  /** Returns true if the carousel item with the given video ID is currently selected. */
+  isVideoSelected(videoId: string): boolean {
+    const items = this.getItems();
+    for (const item of items) {
+      const img = item.querySelector("img");
+      if (img?.src?.includes(videoId)) {
+        return item.classList.contains(SELECTORS.carousel.selectedClass);
+      }
+    }
+    return false;
+  }
+
   /** Returns the carousel container element. */
   private getContainer(): Element | null {
     return this.$(SELECTORS.carousel.container);
