@@ -145,33 +145,31 @@ export function fillAndSubmitVideo(text: string): Result<void, DomError> {
   return promptFormPage.fillAndSubmit(text);
 }
 
-/** Clicks a mood option from the Settings dropdown menu. */
+/** Clicks a mood option from the More Options dropdown menu. */
 export async function clickMoodOptionFromMenu(
   option: string,
 ): Promise<Result<void, DomError>> {
-  // Open menu if needed
-  const openResult = promptSettingsMenu.open();
+  // Mood options are now in the More Options menu (not Settings menu)
+  const openResult = moreOptionsMenu.open();
   if (openResult.isErr()) {
     return openResult;
   }
 
   // Wait for menu to appear if it wasn't already open
-  if (!promptSettingsMenu.isOpen()) {
+  if (!moreOptionsMenu.isOpen()) {
     const menuContent = await waitForElement(
       "[data-radix-menu-content]",
       TIMEOUTS.menuWait,
     );
     if (!menuContent) {
-      return err({ type: "menu_not_open", menu: "settings" });
+      return err({ type: "menu_not_open", menu: "more options" });
     }
     // Small delay for menu animation
     await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.menuAnimation));
   }
 
-  // Click the mood option
-  return promptSettingsMenu.clickMoodOption(
-    option as "spicy" | "fun" | "normal",
-  );
+  // Click the mood option (only "spicy" and "normal" are now available)
+  return moreOptionsMenu.clickMoodOption(option as "spicy" | "normal");
 }
 
 // Click a video option (duration, resolution, or mood)
@@ -255,14 +253,15 @@ export async function clickVideoOption(
     });
   }
 
-  // Mood options require opening the Settings menu
-  if (["spicy", "fun", "normal"].includes(option)) {
+  // Mood options require opening the More Options menu
+  // Note: "fun" mood option has been removed from Grok Imagine
+  if (["spicy", "normal"].includes(option)) {
     return await clickMoodOptionFromMenu(option);
   }
 
   return err({
     type: "invalid_state",
-    expected: "6s|10s|480p|720p|spicy|fun|normal",
+    expected: "6s|10s|480p|720p|spicy|normal",
     actual: option,
   });
 }

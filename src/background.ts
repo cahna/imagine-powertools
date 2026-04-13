@@ -55,16 +55,17 @@ interface JobInfo {
 }
 
 // Video option types
-type VideoOption = "6s" | "10s" | "480p" | "720p" | "spicy" | "fun" | "normal";
+// Note: "fun" mood option has been removed from Grok Imagine
+type VideoOption = "6s" | "10s" | "480p" | "720p" | "spicy" | "normal";
 
 // Mapping from command name to video option
+// Note: "fun" mood option has been removed from Grok Imagine
 const VIDEO_COMMANDS: Record<string, VideoOption> = {
   "video-6s": "6s",
   "video-10s": "10s",
   "video-480p": "480p",
   "video-720p": "720p",
   "video-spicy": "spicy",
-  "video-fun": "fun",
   "video-normal": "normal",
 };
 

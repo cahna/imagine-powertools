@@ -3,10 +3,7 @@
  * Persists enabled workarounds to chrome.storage.local.
  */
 
-import {
-  type WorkaroundSettings,
-  DEFAULT_WORKAROUND_SETTINGS,
-} from "./types";
+import { type WorkaroundSettings, DEFAULT_WORKAROUND_SETTINGS } from "./types";
 
 const STORAGE_KEY = "workaroundSettings";
 

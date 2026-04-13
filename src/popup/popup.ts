@@ -351,7 +351,6 @@ function generateShortcutsScript(): string {
     'video-480p': ',',
     'video-720p': '.',
     'video-spicy': 'X',
-    'video-fun': 'F',
     'video-normal': 'N',
     'download-video': 'D',
     'autosubmit': 'A',

@@ -32,9 +32,20 @@ export class MoreOptionsMenu extends PageObject {
     return ok(undefined);
   }
 
-  /** Clicks the "Extend video" menu item. */
+  /** Clicks the "Extend" menu item. */
   clickExtendVideo(): Result<void, DomError> {
-    return this.clickMenuItem("Extend video");
+    return this.clickMenuItem("Extend");
+  }
+
+  /** Clicks the "Remix" menu item. */
+  clickRemix(): Result<void, DomError> {
+    return this.clickMenuItem("Remix");
+  }
+
+  /** Clicks a mood preset option (Spicy or Normal). */
+  clickMoodOption(mood: "spicy" | "normal"): Result<void, DomError> {
+    const moodText = mood.charAt(0).toUpperCase() + mood.slice(1);
+    return this.clickMenuItem(moodText);
   }
 
   /** Clicks the "Delete" menu item. */

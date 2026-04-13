@@ -279,15 +279,15 @@ describe("clickVideoOption", () => {
     });
   });
 
-  describe("mood options (Settings menu)", () => {
-    // This test catches the "removed clickMoodOptionFromMenu" bug
-    it("clicks spicy option via Settings menu", async () => {
+  describe("mood options (More Options menu)", () => {
+    // Mood options are now in the More Options menu (not Settings menu)
+    // Note: "fun" mood option has been removed from Grok Imagine
+    it("clicks spicy option via More Options menu", async () => {
       const menuItemClicked = vi.fn();
       document.body.innerHTML = `
-        <button aria-label="Settings" aria-expanded="true">Settings</button>
+        <button aria-label="More options" aria-expanded="true">More options</button>
         <div data-radix-menu-content>
           <div role="menuitem" data-radix-collection-item>Spicy</div>
-          <div role="menuitem" data-radix-collection-item>Fun</div>
           <div role="menuitem" data-radix-collection-item>Normal</div>
         </div>
       `;
@@ -302,26 +302,11 @@ describe("clickVideoOption", () => {
       expect(menuItemClicked).toHaveBeenCalled();
     });
 
-    it("clicks fun option via Settings menu", async () => {
+    it("clicks normal option via More Options menu", async () => {
       document.body.innerHTML = `
-        <button aria-label="Settings" aria-expanded="true">Settings</button>
+        <button aria-label="More options" aria-expanded="true">More options</button>
         <div data-radix-menu-content>
           <div role="menuitem" data-radix-collection-item>Spicy</div>
-          <div role="menuitem" data-radix-collection-item>Fun</div>
-          <div role="menuitem" data-radix-collection-item>Normal</div>
-        </div>
-      `;
-
-      const result = await clickVideoOption("fun");
-      expect(result.isOk()).toBe(true);
-    });
-
-    it("clicks normal option via Settings menu", async () => {
-      document.body.innerHTML = `
-        <button aria-label="Settings" aria-expanded="true">Settings</button>
-        <div data-radix-menu-content>
-          <div role="menuitem" data-radix-collection-item>Spicy</div>
-          <div role="menuitem" data-radix-collection-item>Fun</div>
           <div role="menuitem" data-radix-collection-item>Normal</div>
         </div>
       `;
@@ -330,7 +315,7 @@ describe("clickVideoOption", () => {
       expect(result.isOk()).toBe(true);
     });
 
-    it("returns error when Settings button not found for mood option", async () => {
+    it("returns error when More options button not found for mood option", async () => {
       document.body.innerHTML = "";
 
       const result = await clickVideoOption("spicy");
@@ -338,7 +323,15 @@ describe("clickVideoOption", () => {
       expect(result.isErr()).toBe(true);
       const error = result._unsafeUnwrapErr();
       expect(error.type).toBe("element_not_found");
-      expect(error).toHaveProperty("element", "settings button");
+      expect(error).toHaveProperty("element", "more options button");
+    });
+
+    it("returns error for removed fun option", async () => {
+      const result = await clickVideoOption("fun");
+
+      expect(result.isErr()).toBe(true);
+      const error = result._unsafeUnwrapErr();
+      expect(error.type).toBe("invalid_state");
     });
   });
 
