@@ -41,6 +41,12 @@ import {
   setupFavoritesClickHandler,
 } from "./handlers";
 
+import { injectPageScript, setupInterceptHandler } from "./intercept";
+import {
+  getInterceptEnabled,
+  onInterceptEnabledChange,
+} from "./shared/interceptSettings";
+
 export type { Mode };
 
 // =============================================================================
@@ -399,6 +405,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Initialization
 // =============================================================================
 
+/** Initializes request interception if enabled. */
+async function initIntercept(): Promise<void> {
+  // Always set up the handler to receive messages from page script
+  setupInterceptHandler();
+
+  // Check if interception is enabled and inject page script if so
+  const enabled = await getInterceptEnabled();
+  if (enabled) {
+    injectPageScript();
+    logger.log("Request interception enabled and injected");
+  }
+
+  // Listen for toggle changes (user can enable during session)
+  onInterceptEnabledChange((newEnabled) => {
+    if (newEnabled) {
+      injectPageScript();
+      logger.log("Request interception enabled (requires page reload to disable)");
+    }
+  });
+}
+
 /** Initializes the content script: detects mode, sets up observers and handlers. */
 function init(): void {
   logger.log("Content script loaded");
@@ -415,6 +442,9 @@ function init(): void {
 
   // Set up favorites click handler
   setupFavoritesClickHandler();
+
+  // Initialize request interception
+  initIntercept();
 }
 
 init();

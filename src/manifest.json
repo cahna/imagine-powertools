@@ -93,5 +93,11 @@
     }
   ],
   "permissions": ["storage", "activeTab"],
-  "host_permissions": []
+  "host_permissions": [],
+  "web_accessible_resources": [
+    {
+      "resources": ["intercept/pageScript.js"],
+      "matches": ["https://grok.com/*"]
+    }
+  ]
 }

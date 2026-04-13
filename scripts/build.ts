@@ -1,5 +1,13 @@
 import * as esbuild from "esbuild";
-import { cpSync, mkdirSync, rmSync, existsSync, watch } from "fs";
+import {
+  cpSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  watch,
+  readFileSync,
+  writeFileSync,
+} from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -48,9 +56,44 @@ function copyStaticFiles() {
   console.log("Static files copied");
 }
 
+// Generate intercept source files and build pageScript.js
+async function generateInterceptSources() {
+  const interceptDir = join(srcDir, "intercept");
+  const interceptDistDir = join(distDir, "intercept");
+
+  // Ensure intercept dist directory exists
+  mkdirSync(interceptDistDir, { recursive: true });
+
+  // Build pageScript.ts to dist/intercept/pageScript.js (for web_accessible_resources)
+  await esbuild.build({
+    entryPoints: [join(interceptDir, "pageScript.ts")],
+    bundle: true,
+    minify: !isWatch,
+    format: "iife",
+    target: "chrome120",
+    outfile: join(interceptDistDir, "pageScript.js"),
+  });
+
+  // Read modal.css and generate modalCssSource.ts
+  const modalCssContent = readFileSync(join(interceptDir, "modal.css"), "utf-8");
+  const modalCssSourceContent = `/**
+ * Auto-generated file containing the modal CSS source.
+ * DO NOT EDIT - regenerate with: npm run build
+ */
+
+export const modalCssSource = ${JSON.stringify(modalCssContent)};
+`;
+  writeFileSync(join(interceptDir, "modalCssSource.ts"), modalCssSourceContent);
+
+  console.log("Intercept sources generated");
+}
+
 // Build TypeScript files
 async function build() {
   copyStaticFiles();
+
+  // Generate intercept sources before building content script
+  await generateInterceptSources();
 
   const commonOptions: esbuild.BuildOptions = {
     bundle: true,
@@ -97,6 +140,9 @@ async function build() {
 // Watch mode
 if (isWatch) {
   console.log("Watching for changes...");
+
+  // Generate intercept sources initially
+  await generateInterceptSources();
 
   const rebuildPlugin: esbuild.Plugin = {
     name: "rebuild-notify",
@@ -171,6 +217,21 @@ if (isWatch) {
       copyStaticFiles();
       console.log(
         `Static file changed, copied at ${new Date().toLocaleTimeString()}`,
+      );
+    });
+  }
+
+  // Watch intercept source files and regenerate when changed
+  const interceptSourceFiles = [
+    join(srcDir, "intercept/pageScript.ts"),
+    join(srcDir, "intercept/modal.css"),
+  ];
+
+  for (const file of interceptSourceFiles) {
+    watch(file, async () => {
+      await generateInterceptSources();
+      console.log(
+        `Intercept sources regenerated at ${new Date().toLocaleTimeString()}`,
       );
     });
   }

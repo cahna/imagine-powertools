@@ -27,6 +27,10 @@ import {
   getWorkaroundSettings,
   toggleWorkaround,
 } from "../shared/workarounds";
+import {
+  getInterceptEnabled,
+  setInterceptEnabled,
+} from "../shared/interceptSettings";
 
 type Mode = "favorites" | "results" | "post" | "post-extend" | "none";
 
@@ -483,6 +487,19 @@ function generateShortcutsScript(): string {
 })();`;
 }
 
+/** Initializes the request interception toggle in the Settings tab. */
+async function initInterceptToggle(): Promise<void> {
+  const checkbox = document.getElementById(
+    "intercept-enabled",
+  ) as HTMLInputElement | null;
+  if (!checkbox) return;
+
+  checkbox.checked = await getInterceptEnabled();
+  checkbox.addEventListener("change", async () => {
+    await setInterceptEnabled(checkbox.checked);
+  });
+}
+
 /** Renders the workaround toggles in the Settings tab. */
 async function renderWorkaroundSettings(): Promise<void> {
   const container = document.getElementById("workaround-toggles");
@@ -596,9 +613,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         loadJobs(jobsList, noJobsEl);
       }
 
-      // Load workaround settings when Settings tab is clicked
+      // Load workaround settings and intercept toggle when Settings tab is clicked
       if (targetTab === "settings") {
         renderWorkaroundSettings();
+        initInterceptToggle();
       }
     });
   });

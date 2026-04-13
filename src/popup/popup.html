@@ -187,6 +187,20 @@
 
       <!-- Settings tab content -->
       <div id="tab-settings" class="tab-content">
+        <h2 class="section-title">Request Interception</h2>
+        <p class="setting-description">
+          Intercept and edit POST requests before they are sent.
+        </p>
+        <label class="setting-toggle">
+          <input type="checkbox" id="intercept-enabled" />
+          <span class="setting-label-text">Enable request interception</span>
+        </label>
+        <p class="setting-note">
+          When enabled, a modal will appear to edit the JSON payload before
+          submission. Requires page reload to take effect.
+        </p>
+        <hr class="section-divider" />
+
         <h2 class="section-title">Background Tab Workarounds</h2>
         <p class="workaround-description">
           Enable workarounds to keep autosubmit running when tabs are not

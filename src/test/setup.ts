@@ -13,8 +13,12 @@ const mockChrome = {
   },
   storage: {
     local: {
-      get: vi.fn((keys, callback) => callback({})),
-      set: vi.fn((items, callback) => callback?.()),
+      get: vi.fn().mockResolvedValue({}),
+      set: vi.fn().mockResolvedValue(undefined),
+    },
+    onChanged: {
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
     },
   },
   tabs: {

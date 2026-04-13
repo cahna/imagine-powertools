@@ -5,6 +5,21 @@ import { PromptSettingsMenu } from "../menus";
 import { Result, ok, err } from "../../shared/result";
 import type { DomError } from "../../shared/errors";
 
+/** Minimal type for tiptap Editor instance accessed from DOM element. */
+interface TiptapEditor {
+  chain: () => TiptapChain;
+  emit: (event: string, data: unknown) => void;
+  view: { state: { tr: unknown } };
+  getText?: () => string;
+}
+
+interface TiptapChain {
+  focus: () => TiptapChain;
+  clearContent: () => TiptapChain;
+  insertContent: (content: string) => TiptapChain;
+  run: () => void;
+}
+
 /**
  * PageObject for interacting with the prompt input form and submission.
  * Supports both tiptap/ProseMirror editor and legacy textarea.
@@ -112,6 +127,23 @@ export class PromptFormPage extends PageObject {
 
   /** Sets content in a tiptap/ProseMirror contenteditable element. */
   private setTiptapContent(element: HTMLElement, text: string): void {
+    // Try to use the tiptap editor API directly for proper state updates
+    const editor = (element as HTMLElement & { editor?: TiptapEditor }).editor;
+
+    if (editor && typeof editor.chain === "function") {
+      // Use the proper tiptap API to ensure internal state is updated
+      editor.chain().focus().clearContent().insertContent(text).run();
+
+      // Emit update event to trigger React's state sync
+      // Without this, React doesn't pick up the content change and the form
+      // submits without the prompt text
+      if (typeof editor.emit === "function") {
+        editor.emit("update", { editor, transaction: editor.view?.state?.tr });
+      }
+      return;
+    }
+
+    // Fallback to execCommand approach for legacy support
     element.focus();
 
     // Select all existing content

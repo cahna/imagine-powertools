@@ -124,9 +124,38 @@ export function setReactInputValue(
   element.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-// Set content in a tiptap/ProseMirror contenteditable element
+/** Minimal type for tiptap Editor instance accessed from DOM element. */
+interface TiptapEditor {
+  chain: () => TiptapChain;
+  emit: (event: string, data: unknown) => void;
+  view: { state: { tr: unknown } };
+}
+
+interface TiptapChain {
+  focus: () => TiptapChain;
+  clearContent: () => TiptapChain;
+  insertContent: (content: string) => TiptapChain;
+  run: () => void;
+}
+
+/** Sets content in a tiptap/ProseMirror contenteditable element. */
 export function setTiptapContent(element: HTMLElement, text: string): void {
-  // Focus the element
+  // Try to use the tiptap editor API directly for proper state updates
+  const editor = (element as HTMLElement & { editor?: TiptapEditor }).editor;
+
+  if (editor && typeof editor.chain === "function") {
+    editor.chain().focus().clearContent().insertContent(text).run();
+
+    // Emit update event to trigger React's state sync
+    // Without this, React doesn't pick up the content change and the form
+    // submits without the prompt text
+    if (typeof editor.emit === "function") {
+      editor.emit("update", { editor, transaction: editor.view?.state?.tr });
+    }
+    return;
+  }
+
+  // Fallback to execCommand approach for legacy support
   element.focus();
 
   // Select all existing content
@@ -136,7 +165,7 @@ export function setTiptapContent(element: HTMLElement, text: string): void {
   selection?.removeAllRanges();
   selection?.addRange(range);
 
-  // Insert new text (this replaces the selection and triggers tiptap's internal events)
+  // Insert new text (replaces selection and triggers tiptap's internal events)
   document.execCommand("insertText", false, text);
 }
 
