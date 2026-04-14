@@ -4,6 +4,7 @@
  */
 
 import { showInterceptModal } from "./modal";
+import { getInterceptEnabled } from "../shared/interceptSettings";
 
 const MESSAGE_PREFIX = "IPT_INTERCEPT";
 
@@ -30,12 +31,22 @@ export function setupInterceptHandler(): void {
 
     const request = event.data as InterceptRequest;
 
-    // Show modal and wait for user action
-    const result = await showInterceptModal(
-      request.id,
-      request.url,
-      request.payload,
-    );
+    // Check if intercept modal is enabled
+    const interceptEnabled = await getInterceptEnabled();
+
+    let result: { action: "proceed" | "cancel"; payload?: string };
+
+    if (interceptEnabled) {
+      // Show modal and wait for user action
+      result = await showInterceptModal(
+        request.id,
+        request.url,
+        request.payload,
+      );
+    } else {
+      // Auto-proceed without modal (prompt injection still happened in page script)
+      result = { action: "proceed", payload: request.payload };
+    }
 
     // Send response back to page script
     const response: InterceptResponse = {

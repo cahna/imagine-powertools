@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { PromptFormPage } from "./PromptFormPage";
+import { TIMEOUTS } from "../../config";
 
 describe("PromptFormPage", () => {
   beforeEach(() => {
@@ -108,26 +109,28 @@ describe("PromptFormPage", () => {
   });
 
   describe("fillPrompt()", () => {
-    it("fills tiptap editor with text", () => {
+    it("fills tiptap editor with text via postMessage", () => {
       document.body.innerHTML = `
         <div class="tiptap ProseMirror" contenteditable="true">Old text</div>
       `;
 
-      // Mock execCommand for tiptap
-      const originalExecCommand = document.execCommand;
-      document.execCommand = vi.fn().mockReturnValue(true);
+      // Mock postMessage for tiptap content setting
+      const postMessageSpy = vi.spyOn(window, "postMessage");
 
       const page = new PromptFormPage();
       const result = page.fillPrompt("New prompt text");
 
       expect(result.isOk()).toBe(true);
-      expect(document.execCommand).toHaveBeenCalledWith(
-        "insertText",
-        false,
-        "New prompt text",
+      // Should send postMessage to page script for tiptap content setting
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "IPT_TIPTAP:setContent",
+          text: "New prompt text",
+        }),
+        "*",
       );
 
-      document.execCommand = originalExecCommand;
+      postMessageSpy.mockRestore();
     });
 
     it("fills textarea with text", () => {
@@ -205,9 +208,9 @@ describe("PromptFormPage", () => {
 
       expect(result.isOk()).toBe(true);
 
-      // Button click is scheduled with setTimeout
+      // Button click is scheduled with setTimeout (uses TIMEOUTS.inputToButtonDelay)
       expect(clickSpy).not.toHaveBeenCalled();
-      vi.advanceTimersByTime(100);
+      vi.advanceTimersByTime(TIMEOUTS.inputToButtonDelay);
       expect(clickSpy).toHaveBeenCalled();
 
       vi.useRealTimers();

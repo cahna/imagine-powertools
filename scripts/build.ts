@@ -75,7 +75,10 @@ async function generateInterceptSources() {
   });
 
   // Read modal.css and generate modalCssSource.ts
-  const modalCssContent = readFileSync(join(interceptDir, "modal.css"), "utf-8");
+  const modalCssContent = readFileSync(
+    join(interceptDir, "modal.css"),
+    "utf-8",
+  );
   const modalCssSourceContent = `/**
  * Auto-generated file containing the modal CSS source.
  * DO NOT EDIT - regenerate with: npm run build
@@ -88,12 +91,34 @@ export const modalCssSource = ${JSON.stringify(modalCssContent)};
   console.log("Intercept sources generated");
 }
 
+// Build tiptap page script
+async function buildTiptapPageScript() {
+  const tiptapDir = join(srcDir, "tiptap");
+  const tiptapDistDir = join(distDir, "tiptap");
+
+  // Ensure tiptap dist directory exists
+  mkdirSync(tiptapDistDir, { recursive: true });
+
+  // Build pageScript.ts to dist/tiptap/pageScript.js (for web_accessible_resources)
+  await esbuild.build({
+    entryPoints: [join(tiptapDir, "pageScript.ts")],
+    bundle: true,
+    minify: !isWatch,
+    format: "iife",
+    target: "chrome120",
+    outfile: join(tiptapDistDir, "pageScript.js"),
+  });
+
+  console.log("Tiptap page script built");
+}
+
 // Build TypeScript files
 async function build() {
   copyStaticFiles();
 
-  // Generate intercept sources before building content script
+  // Generate intercept sources and tiptap page script before building content script
   await generateInterceptSources();
+  await buildTiptapPageScript();
 
   const commonOptions: esbuild.BuildOptions = {
     bundle: true,
@@ -141,8 +166,9 @@ async function build() {
 if (isWatch) {
   console.log("Watching for changes...");
 
-  // Generate intercept sources initially
+  // Generate intercept sources and tiptap page script initially
   await generateInterceptSources();
+  await buildTiptapPageScript();
 
   const rebuildPlugin: esbuild.Plugin = {
     name: "rebuild-notify",
@@ -232,6 +258,17 @@ if (isWatch) {
       await generateInterceptSources();
       console.log(
         `Intercept sources regenerated at ${new Date().toLocaleTimeString()}`,
+      );
+    });
+  }
+
+  // Watch tiptap page script and rebuild when changed
+  const tiptapPageScript = join(srcDir, "tiptap/pageScript.ts");
+  if (existsSync(tiptapPageScript)) {
+    watch(tiptapPageScript, async () => {
+      await buildTiptapPageScript();
+      console.log(
+        `Tiptap page script rebuilt at ${new Date().toLocaleTimeString()}`,
       );
     });
   }

@@ -42,7 +42,7 @@ export const TIMEOUTS = {
   navigationPollAttempts: 20,
 
   /** Delay before clicking button after filling input (React sync). */
-  inputToButtonDelay: 50,
+  inputToButtonDelay: 500,
 
   /** Delay for extend mode activation check. */
   extendModeActivation: 1_000,

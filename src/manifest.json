@@ -96,7 +96,7 @@
   "host_permissions": [],
   "web_accessible_resources": [
     {
-      "resources": ["intercept/pageScript.js"],
+      "resources": ["intercept/pageScript.js", "tiptap/pageScript.js"],
       "matches": ["https://grok.com/*"]
     }
   ]

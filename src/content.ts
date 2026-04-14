@@ -16,6 +16,7 @@ import {
 } from "./content.core";
 import { logger } from "./shared/logger";
 import { SELECTORS } from "./selectors";
+import { TIMEOUTS } from "./config";
 import {
   ContentMessageType,
   PromptMessageType,
@@ -42,10 +43,7 @@ import {
 } from "./handlers";
 
 import { injectPageScript, setupInterceptHandler } from "./intercept";
-import {
-  getInterceptEnabled,
-  onInterceptEnabledChange,
-} from "./shared/interceptSettings";
+import { injectTiptapScript } from "./tiptap";
 
 export type { Mode };
 
@@ -188,8 +186,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
       }
 
-      // Small delay to let UI settle
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Wait for UI to settle - React needs time to update form state
+      // Using uiSettle timeout per CLAUDE.md guidance on stability over speed
+      await new Promise((resolve) => setTimeout(resolve, TIMEOUTS.uiSettle));
+
+      // Update mode state so subsequent commands know we're in extend mode
+      setCurrentMode("post-extend");
+      sendModeUpdate("post-extend");
+      logger.log("[extend] Mode updated to post-extend");
+
+      // Focus the prompt input to ensure extend mode is properly activated in React
+      const tiptapEditor = document.querySelector<HTMLElement>(
+        'div.tiptap.ProseMirror[contenteditable="true"]',
+      );
+      if (tiptapEditor) {
+        tiptapEditor.focus();
+      }
 
       // Click Make video
       const submitResult = clickMakeVideoButton();
@@ -242,8 +254,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             return;
           }
         }
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, TIMEOUTS.uiSettle));
       }
+
+      // Always update mode state so subsequent commands know we're in extend mode
+      // This handles both entering extend mode AND when already in extend mode
+      setCurrentMode("post-extend");
+      sendModeUpdate("post-extend");
+      logger.log("[extend] Mode updated to post-extend");
 
       // Focus the prompt input
       const tiptapEditor = document.querySelector<HTMLElement>(
@@ -405,25 +423,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // Initialization
 // =============================================================================
 
-/** Initializes request interception if enabled. */
-async function initIntercept(): Promise<void> {
-  // Always set up the handler to receive messages from page script
+/** Initializes tiptap support and optional request interception. */
+async function initPageScripts(): Promise<void> {
+  // Always inject tiptap script - needed for setting editor content
+  // (content scripts can't access page JS properties like element.editor)
+  injectTiptapScript();
+
+  // Set up the handler to receive intercept messages from page script
   setupInterceptHandler();
 
-  // Check if interception is enabled and inject page script if so
-  const enabled = await getInterceptEnabled();
-  if (enabled) {
-    injectPageScript();
-    logger.log("Request interception enabled and injected");
-  }
-
-  // Listen for toggle changes (user can enable during session)
-  onInterceptEnabledChange((newEnabled) => {
-    if (newEnabled) {
-      injectPageScript();
-      logger.log("Request interception enabled (requires page reload to disable)");
-    }
-  });
+  // Always inject intercept pageScript - it handles prompt injection
+  // which is needed for autosubmit to work correctly.
+  // The modal is only shown when the intercept feature is enabled.
+  injectPageScript();
+  logger.log("Request interception pageScript injected");
 }
 
 /** Initializes the content script: detects mode, sets up observers and handlers. */
@@ -443,8 +456,8 @@ function init(): void {
   // Set up favorites click handler
   setupFavoritesClickHandler();
 
-  // Initialize request interception
-  initIntercept();
+  // Initialize page scripts (tiptap always, intercept if enabled)
+  initPageScripts();
 }
 
 init();

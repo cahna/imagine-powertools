@@ -5,21 +5,6 @@ import { PromptSettingsMenu } from "../menus";
 import { Result, ok, err } from "../../shared/result";
 import type { DomError } from "../../shared/errors";
 
-/** Minimal type for tiptap Editor instance accessed from DOM element. */
-interface TiptapEditor {
-  chain: () => TiptapChain;
-  emit: (event: string, data: unknown) => void;
-  view: { state: { tr: unknown } };
-  getText?: () => string;
-}
-
-interface TiptapChain {
-  focus: () => TiptapChain;
-  clearContent: () => TiptapChain;
-  insertContent: (content: string) => TiptapChain;
-  run: () => void;
-}
-
 /**
  * PageObject for interacting with the prompt input form and submission.
  * Supports both tiptap/ProseMirror editor and legacy textarea.
@@ -86,17 +71,22 @@ export class PromptFormPage extends PageObject {
       return err({ type: "element_not_found", element: "Make video button" });
     }
 
-    // Fill the prompt
+    // Fill the prompt and click button after confirmation
     if (this.isTiptapEditor(input)) {
-      this.setTiptapContent(input, text);
+      // Wait for tiptap content to be set, then click button
+      this.setTiptapContent(input, text).then(() => {
+        // Additional delay for React to process state changes
+        setTimeout(() => {
+          button.click();
+        }, TIMEOUTS.inputToButtonDelay);
+      });
     } else {
       this.setReactInputValue(input as HTMLTextAreaElement, text);
+      // Click button after small delay for React to process
+      setTimeout(() => {
+        button.click();
+      }, TIMEOUTS.inputToButtonDelay);
     }
-
-    // Click button after small delay for React to process
-    setTimeout(() => {
-      button.click();
-    }, TIMEOUTS.inputToButtonDelay);
 
     return ok(undefined);
   }
@@ -125,36 +115,75 @@ export class PromptFormPage extends PageObject {
     );
   }
 
-  /** Sets content in a tiptap/ProseMirror contenteditable element. */
-  private setTiptapContent(element: HTMLElement, text: string): void {
-    // Try to use the tiptap editor API directly for proper state updates
-    const editor = (element as HTMLElement & { editor?: TiptapEditor }).editor;
+  /**
+   * Sets content in a tiptap/ProseMirror contenteditable element.
+   *
+   * IMPORTANT: Content scripts run in an isolated world and cannot access
+   * the `.editor` property set by the page's JavaScript. We use postMessage
+   * to communicate with the injected page script that runs in the MAIN world.
+   *
+   * Returns a Promise that resolves when the page script confirms the content was set.
+   */
+  private setTiptapContent(element: HTMLElement, text: string): Promise<void> {
+    return new Promise((resolve) => {
+      // Focus the editor first
+      element.focus();
 
-    if (editor && typeof editor.chain === "function") {
-      // Use the proper tiptap API to ensure internal state is updated
-      editor.chain().focus().clearContent().insertContent(text).run();
+      // Generate unique ID for this request
+      const id = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      // Emit update event to trigger React's state sync
-      // Without this, React doesn't pick up the content change and the form
-      // submits without the prompt text
-      if (typeof editor.emit === "function") {
-        editor.emit("update", { editor, transaction: editor.view?.state?.tr });
-      }
-      return;
-    }
+      let timeoutId: ReturnType<typeof setTimeout>;
 
-    // Fallback to execCommand approach for legacy support
-    element.focus();
+      // Set up listener for confirmation
+      // Note: Don't check event.source because page script runs in MAIN world
+      // and content script runs in isolated world - they have different window refs
+      const handleResponse = (event: MessageEvent) => {
+        if (event.data?.type !== "IPT_TIPTAP:setContentDone") return;
+        if (event.data?.id !== id) return;
 
-    // Select all existing content
-    const selection = window.getSelection();
-    const range = this.doc.createRange();
-    range.selectNodeContents(element);
-    selection?.removeAllRanges();
-    selection?.addRange(range);
+        // Clear timeout and remove listener
+        clearTimeout(timeoutId);
+        (this.doc.defaultView || window).removeEventListener(
+          "message",
+          handleResponse,
+        );
 
-    // Insert new text (replaces selection and triggers tiptap's internal events)
-    this.doc.execCommand("insertText", false, text);
+        if (event.data.success) {
+          resolve();
+        } else {
+          // Still resolve but log warning
+          console.warn("[IPT] setTiptapContent failed in page script");
+          resolve();
+        }
+      };
+
+      (this.doc.defaultView || window).addEventListener(
+        "message",
+        handleResponse,
+      );
+
+      // Send message to page script
+      (this.doc.defaultView || window).postMessage(
+        {
+          type: "IPT_TIPTAP:setContent",
+          id,
+          text,
+        },
+        "*",
+      );
+
+      // Timeout fallback in case confirmation never comes
+      timeoutId = setTimeout(() => {
+        (this.doc.defaultView || window).removeEventListener(
+          "message",
+          handleResponse,
+        );
+        console.warn(
+          "[IPT] setTiptapContent timed out waiting for confirmation",
+        );
+        resolve();
+      }, 1000);
+    });
   }
 
   /** Sets value on a React-controlled input/textarea. */

@@ -345,13 +345,10 @@ describe("clickVideoOption", () => {
 });
 
 describe("fillAndSubmitVideo", () => {
-  beforeEach(() => {
-    // Mock document.execCommand for tiptap
-    document.execCommand = vi.fn();
-  });
-
-  it("fills tiptap editor and clicks Make video button", () => {
+  it("fills tiptap editor via postMessage and clicks Make video button", () => {
     const clickHandler = vi.fn();
+    const postMessageSpy = vi.spyOn(window, "postMessage");
+
     document.body.innerHTML = `
       <div class="tiptap ProseMirror" contenteditable="true"></div>
       <button aria-label="Make video">Make video</button>
@@ -365,11 +362,16 @@ describe("fillAndSubmitVideo", () => {
     const result = fillAndSubmitVideo("test prompt");
 
     expect(result.isOk()).toBe(true);
-    expect(document.execCommand).toHaveBeenCalledWith(
-      "insertText",
-      false,
-      "test prompt",
+    // Should send postMessage to page script for tiptap content setting
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "IPT_TIPTAP:setContent",
+        text: "test prompt",
+      }),
+      "*",
     );
+
+    postMessageSpy.mockRestore();
   });
 
   it("returns error when no input found", () => {

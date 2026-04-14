@@ -27,7 +27,11 @@ describe("showInterceptModal", () => {
   });
 
   it("formats JSON payload with indentation", () => {
-    showInterceptModal("test-id", "https://test.com", '{"foo":"bar","baz":123}');
+    showInterceptModal(
+      "test-id",
+      "https://test.com",
+      '{"foo":"bar","baz":123}',
+    );
 
     const textarea = document.querySelector<HTMLTextAreaElement>(
       ".ipt-modal-textarea",
@@ -215,7 +219,10 @@ describe("showInterceptModal", () => {
     const overlay = document.querySelector(".ipt-modal-overlay");
     // Click directly on overlay (not on container)
     overlay?.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, target: overlay } as MouseEventInit),
+      new MouseEvent("click", {
+        bubbles: true,
+        target: overlay,
+      } as MouseEventInit),
     );
 
     const result = await promise;
